@@ -4,8 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.150.0",
+    "faster-whisper>=1.2.1",
     "mcp>=2.3.0",
     "ocrmac>=1.0.1",
     "pyobjc-framework-quartz>=12.2.2",
+    "sounddevice>=0.5.6",
+    "soundfile>=0.14.0",
     "uvicorn>=0.54.0",
 ]

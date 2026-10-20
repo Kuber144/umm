@@ -3,10 +3,11 @@ import sqlite3
 from pathlib import Path
 
 DATA = Path(__file__).resolve().parent.parent / "data"
-SHOTS = DATA / "shots"
-SHOTS.mkdir(parents=True, exist_ok=True)
+FILES = DATA / "files"
+FILES.mkdir(parents=True, exist_ok=True)
 PROFILE = DATA / "profile.txt"
 
+# sqlite3.threadsafety is 3 (serialized), so one connection is shared by API threads and the transcriber
 db = sqlite3.connect(DATA / "umm.db", check_same_thread=False)
 db.row_factory = sqlite3.Row
 db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS items USING fts5("
@@ -23,36 +24,54 @@ def set_profile(name):
 
 
 def profiles():
-    names = {r[0] for r in db.execute("SELECT DISTINCT profile FROM items")}
-    return sorted(names | {active_profile()})
+    counts = dict(db.execute("SELECT profile, count(*) FROM items GROUP BY profile").fetchall())
+    counts.setdefault(active_profile(), 0)
+    return [{"name": n, "count": c} for n, c in sorted(counts.items())]
+
+
+def detect(content):
+    if content.startswith(("http://", "https://")):
+        return "link"
+    if "\n" not in content and os.path.exists(os.path.expanduser(content)):
+        return "path"
+    return "text"
 
 
 def add(content, kind=None, file=None, app=None, profile=None):
-    if not kind:
-        kind = "link" if content.startswith("http") else "path" if os.path.exists(os.path.expanduser(content)) else "text"
     cur = db.execute("INSERT INTO items VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))",
-                     (profile or active_profile(), kind, content, file, app))
+                     (profile or active_profile(), kind or detect(content), content, file, app))
     db.commit()
     return cur.lastrowid
 
 
-def search(q="", profile=None, limit=50):
+def update(id, content):
+    db.execute("UPDATE items SET content = ?, kind = ? WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')",
+               (content, detect(content), id))
+    db.execute("UPDATE items SET content = ? WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
+    db.commit()
+
+
+def search(q="", profile=None, kind=None, limit=50, offset=0):
+    """profile None or '*' searches every profile."""
     where, args = [], []
     if q.strip():
         # quote each word so paths like ~/a/b don't break FTS syntax, * gives prefix match
         where.append("items MATCH ?")
         args.append(" ".join(f'"{w}"*' for w in q.replace('"', "").split()))
-    if profile:
+    if profile and profile != "*":
         where.append("profile = ?")
         args.append(profile)
+    if kind:
+        where.append("kind = ?")
+        args.append(kind)
     sql = f"SELECT {COLS} FROM items {'WHERE ' + ' AND '.join(where) if where else ''} " \
-          f"ORDER BY {'rank' if q.strip() else 'rowid DESC'} LIMIT ?"
-    return [dict(r) for r in db.execute(sql, (*args, limit))]
+          f"ORDER BY {'rank' if q.strip() else 'rowid DESC'} LIMIT ? OFFSET ?"
+    return [dict(r) for r in db.execute(sql, (*args, limit, offset))]
 
 
 def delete(id):
     row = db.execute("SELECT file FROM items WHERE rowid = ?", (id,)).fetchone()
     if row and row[0]:
-        (SHOTS / row[0]).unlink(missing_ok=True)
+        (FILES / row[0]).unlink(missing_ok=True)
     db.execute("DELETE FROM items WHERE rowid = ?", (id,))
     db.commit()

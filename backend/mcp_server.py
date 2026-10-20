@@ -14,7 +14,7 @@ def search_memory(query: str = "", profile: str = "") -> list[dict]:
     rows = db.search(query, profile or None)
     for r in rows:
         if r["file"]:
-            r["file"] = str(db.SHOTS / r["file"])
+            r["file"] = str(db.FILES / r["file"])
     return rows
 
 
