@@ -24,7 +24,7 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- The data folder (see below): `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `model/` (search model, 120 MB, downloaded on first save), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `agents/` (connected MCP servers). The database runs in WAL mode, so `umm.db-wal` and `umm.db-shm` sit next to it. The folder is mode 700 and the backend runs with umask 077, so other users on the Mac can't read it.
+- The data folder (see below): `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `model/` (search model, 120 MB, downloaded on first save), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `clipboard.json` (clipboard history), `agents/` (connected MCP servers). The database runs in WAL mode, so `umm.db-wal` and `umm.db-shm` sit next to it. The folder is mode 700 and the backend runs with umask 077, so other users on the Mac can't read it.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild. If a certificate named "umm local signing" exists in the keychain (`scripts/setup-signing.sh`), it signs with that instead and permissions survive rebuilds.
 
 ## Data folder
@@ -109,8 +109,8 @@ POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an i
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
                                                                     clipboard is marked secret (see /api/context)
-GET    /api/clipboard/history                            -> [{text, at}]   text copies since the backend started, newest first, at is local ISO time.
-                                                                    In memory only, never on disk. Up to clipboard_history entries, an older copy of the same
+GET    /api/clipboard/history                            -> [{text, at}]   text copies, newest first, at is local ISO time.
+                                                                    Kept in clipboard.json in the data folder, so it survives a restart. Up to clipboard_history entries, an older copy of the same
                                                                     text is dropped. Secret marked copies are never kept. Save one with POST /api/items
 GET    /api/context?url=                                 -> {app, profile, clipboard_kind, clipboard, recording, url, history}
                                                                     clipboard_kind: text | image | files | null. clipboard is the text, or the
@@ -159,8 +159,8 @@ model:          "small" | "medium", default "medium"
 enrich_links:   default true, fetch title and description of saved links (not links with a secret looking query parameter)
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
-clipboard_history: default 10, 0 to 50. How many text copies the backend remembers for GET /api/clipboard/history. 0 turns it off
-                and clears the list. A thread checks the pasteboard every second. Kept in memory, lost when the backend quits
+clipboard_history: default 50, 0 to 500. How many text copies the backend keeps for GET /api/clipboard/history. 0 turns it off
+                and clears the list. A thread checks the pasteboard every second. Saved to clipboard.json after each change, written through a .tmp file
 screenshot_days: default 0 (keep forever). A background thread runs at backend start and every 24 hours. It deletes the image
                 and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay.
                 It removes umm's copy only. An imported image's original file is left alone, and meta.path still names it
@@ -283,7 +283,7 @@ Connections lists `GET /api/agents`: connected agents with a live dot, then rece
 
 ## Settings view
 
-The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, clipboard history of Off, 10, 25 or 50 entries, the login item, the hotbar key), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once. Pickers use the shared `Menu`.
+The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, clipboard history of Off, 50, 200 or 500 entries, the login item, the hotbar key), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once. Pickers use the shared `Menu`.
 
 To move the data, Change... takes a folder, typed or picked with `chooseFolder`. The data goes to `<folder>/umm`, and the UI shows that path before it posts `/api/storage/move`. The backend then restarts in the new place, so the UI polls `GET /api/storage` every second until the path changes, and gives up after 60 seconds. A 400 or 409 shows its `detail` under the field. On an older backend the UI hides the image retention row, and the move says this version cannot do it.
 

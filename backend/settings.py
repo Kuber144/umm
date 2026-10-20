@@ -15,7 +15,7 @@ class Settings(BaseModel):
     model: Literal["small", "medium"] = "medium"
     enrich_links: bool = True  # fetch title and description of saved links
     excluded_apps: list[str] = []  # app names the hotbar screenshot refuses to capture
-    clipboard_history: int = Field(10, ge=0, le=50)  # text copies kept in memory for the hotbar picker, never on disk. 0 turns it off
+    clipboard_history: int = Field(50, ge=0, le=500)  # text copies kept for the hotbar picker, in clipboard.json in the data folder. 0 turns it off and clears it
     screenshot_days: int = Field(0, ge=0)  # delete screenshot images older than this, keep their text. 0 keeps them forever
 
 

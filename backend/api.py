@@ -1,4 +1,5 @@
 import filecmp
+import json
 import logging
 import mimetypes
 import os
@@ -232,7 +233,15 @@ def context(url: str | None = None):  # url is the page or document Swift read o
             "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status(), "url": url, "history": len(history)}
 
 
-history = []  # [{text, at}] newest first, in memory only. Text copies the backend saw, for the hotbar picker
+try:
+    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text, at}] newest first. Text copies the backend saw, for the hotbar picker
+except (OSError, ValueError):
+    history = []
+
+
+def save_history():
+    CLIP.with_suffix(".tmp").write_text(json.dumps(history))
+    CLIP.with_suffix(".tmp").replace(CLIP)
 
 
 def watch_clipboard():
@@ -243,10 +252,13 @@ def watch_clipboard():
         with objc.autorelease_pool():
             changed, count = count != (c := NSPasteboard.generalPasteboard().changeCount()), c
         if not n:
-            history.clear()
+            if history:
+                history.clear()
+                save_history()
         elif changed and (r := clipboard())[0] == "text":
             text = r[1][:db.MAX_CONTENT]
             history[:] = [{"text": text, "at": datetime.now().isoformat(timespec="seconds")}, *(h for h in history if h["text"] != text)][:n]
+            save_history()
 
 
 threading.Thread(target=watch_clipboard, daemon=True).start()
