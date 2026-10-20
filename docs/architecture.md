@@ -113,7 +113,7 @@ PATCH  /api/settings   {any Settings keys}               -> Settings  422 on a b
 GET    /api/storage                                      -> {path, bytes, kinds}   the data folder, its size and item count per kind
 POST   /api/storage/move {path}                          -> {path}   moves the data folder, then the backend exits and the app restarts it.
                                                                     path must be absolute, writable, not inside the current folder,
-                                                                    and empty (a .DS_Store is fine) or missing. 400 {detail} otherwise, 409 while recording.
+                                                                    and empty (a .DS_Store is fine) or missing. 400 {detail} otherwise, 409 while recording or moving.
                                                                     Every other write gets 503 during the move
 GET    /api/record                                       -> {on, seconds, transcribing}
 POST   /api/record/start {app?, meta?}                          -> same as GET /api/record. The voice item's app is empty when umm itself is in front

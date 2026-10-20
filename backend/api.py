@@ -57,7 +57,7 @@ def one_line(r):  # a traceback is 10 KB of log for one error
 
 
 logging.getLogger("uvicorn.error").addFilter(one_line)
-moving = threading.Event()  # set while the data folder moves, writes are refused so none land in the old folder
+moving = threading.Lock()  # held while the data folder moves, writes are refused so none land in the old folder
 writes = 0  # writes in flight, a move waits for them before it copies
 
 
@@ -66,7 +66,7 @@ async def refuse_writes(request, call_next):
     global writes
     if request.method == "GET":
         return await call_next(request)
-    if moving.is_set():
+    if moving.locked():
         return JSONResponse({"detail": "umm is moving its data folder, try again in a moment"}, 503)
     writes += 1
     try:
@@ -362,7 +362,8 @@ def move_storage(f: Folder):
         raise HTTPException(400, f"{new} is not writable")
     if set(os.listdir(new)) - db.KEEP - {".DS_Store"}:  # Finder leaves one in a folder it showed
         raise HTTPException(400, f"{new} is not empty")
-    moving.set()
+    if not moving.acquire(blocking=False):  # a second move would wait on the first forever
+        raise HTTPException(409, "the data folder is already moving")
     while writes > 1:  # this request is one
         time.sleep(0.05)
     if embed.proc:  # its first-run model download would go on into the old folder after the delete
@@ -372,7 +373,7 @@ def move_storage(f: Folder):
         db.copy_to(new)
     except (OSError, sqlite3.Error) as e:
         clear(new)
-        moving.clear()
+        moving.release()
         raise HTTPException(500, f"the move failed and nothing changed: {e}")
     logging.getLogger("uvicorn.error").info(f"moved the data folder from {old} to {new}")
     try:
