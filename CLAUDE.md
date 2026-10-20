@@ -19,7 +19,7 @@ No TCP ports. The backend listens on a Unix socket and the app owns its lifetime
 - All SQL lives in `backend/db.py`. The API and MCP server call it and never touch SQLite directly.
 - One table, `items`, an FTS5 virtual table. `rowid` is the id. Add a column before adding a table.
 - Nothing app specific. No per-app scripts or app name lists. It has to work the same for anyone in any app.
-- Watch memory and disk. Screenshots are JPG and recordings are 16 kHz mono AAC `.m4a`. Whisper runs in a child process that exits when done. Wrap PyObjC calls in API threads with `objc.autorelease_pool()`. Deleting an item deletes its file.
+- Watch memory and disk. Screenshots are JPG and recordings are 16 kHz mono AAC `.m4a`. Whisper runs in a child process that exits when done. So does the search model (`embed.py`), after 3 idle minutes. Wrap PyObjC calls in API threads with `objc.autorelease_pool()`. Deleting an item deletes its file.
 - No emojis anywhere.
 
 ## Run and test

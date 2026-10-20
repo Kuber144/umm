@@ -17,7 +17,7 @@ import db
 INSTRUCTIONS = """umm is the user's personal memory on their Mac. It holds screenshots (with OCR text), notes, folder paths, links, voice recordings (transcribed) and clipboard saves.
 Items live in profiles. `user` is what the person saved. `agent` is your own memory. The user may add more, such as `work`.
 
-Search first. Call search_memory before asking the user where a file or folder is, what a link was, or about something they saw, wrote or said. Use short keywords and retry with fewer words. An empty query lists the newest items. Screenshot and voice results include an absolute `file` path you can open.
+Search first. Call search_memory before asking the user where a file or folder is, what a link was, or about something they saw, wrote or said. Keywords and plain questions both work, since search matches meaning too. An empty query lists the newest items. Screenshot and voice results include an absolute `file` path you can open.
 
 Remember durable facts worth keeping across sessions: preferences, decisions, project paths, how things are set up. Use remember, which saves to `agent`. Do not save secrets or passing details. Search before saving. If a memory already covers the fact, fix it with update_memory instead of adding a near-duplicate, and forget it when it is wrong.
 Saves record which agent and folder they came from. Filter with `agent`, `project` (a folder and its subfolders) or `here` (the folder you run in) to find what an agent said in one project.
@@ -107,7 +107,7 @@ def own(id, allow_any):
 
 @mcp.tool()
 def search_memory(
-    query: Annotated[str, Field(description="Keywords, AND-matched with prefix matching. Empty lists the newest items.")] = "",
+    query: Annotated[str, Field(description="Keywords or a question. Matches words (prefix) and meaning. Empty lists the newest items.")] = "",
     kind: Annotated[list[Literal["screenshot", "text", "path", "link", "voice"]] | None, Field(description="Only these kinds. Default is all.")] = None,
     app: Annotated[str, Field(description="Only items saved while this app was in front, such as Safari. See list_apps.")] = "",
     since: Annotated[str, Field(description="YYYY-MM-DD, inclusive.")] = "",

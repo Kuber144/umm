@@ -11,7 +11,7 @@ umm.app (Swift, app/)
   umm:// scheme handler  ->  HTTP over data/umm.sock  ->  backend
   starts backend/.venv/bin/python -m uvicorn api:app --uds data/umm.sock
 backend/ (Python, FastAPI)
-  api.py routes, db.py all SQL, record.py mic + Whisper, settings.py defaults for data/settings.json
+  api.py routes, db.py all SQL, record.py mic + Whisper, embed.py search model (child process), settings.py defaults for data/settings.json
   serves ui/dist at / and data/files at /api/files
 mcp_server.py (stdio, started by Claude Code, reads umm.db directly)
 ui/ (React + Vite)
@@ -24,7 +24,7 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`.
+- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `model/` (search model, 120 MB, downloaded on first save), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild. If a certificate named "umm local signing" exists in the keychain (`scripts/setup-signing.sh`), it signs with that instead and permissions survive rebuilds.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
@@ -52,10 +52,12 @@ meta: JSON object or null. Every save sets meta.source: hotbar | app (main windo
       from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
       Enriched links set {link: {site, title, author, text}, icon}, see "Link enrichment".
 
-GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
+GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0&mode=hybrid -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
          app filters by app name (the part before ":"). since/until are YYYY-MM-DD, inclusive.
          sort: new | old | relevance. Default is relevance when q is set, else new. limit is capped at 200.
+         mode: hybrid | keyword. With q, hybrid fuses keyword matches with meaning matches (docs/semantic-search.md).
+         Without the model it is keywords only.
 GET    /api/apps?profile=                                -> [{app, count}]   app names for the filter, most used first
 POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
