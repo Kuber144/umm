@@ -10,8 +10,10 @@ import soundfile as sf
 
 import db
 
-MODEL = "small"  # faster-whisper size, multilingual, runs in a child process only while transcribing to keep idle memory low
-LANGUAGE = "en"  # auto detect misreads short clips (it heard "hello hello" as Arabic), set None to auto detect
+MODEL = "medium"  # faster-whisper size, multilingual, runs in a child process only while transcribing to keep idle memory low
+# languages you speak; free auto detect misreads short clips (it heard "hello hello" as Arabic),
+# so detection only picks the likeliest of these. An empty list allows any language
+LANGUAGES = ["en", "hi"]
 lock = threading.Lock()
 state = {"stream": None, "queue": None, "writer": None, "name": None, "start": 0, "app": None, "profile": None, "transcribing": 0}
 
@@ -58,9 +60,17 @@ def stop():
 
 
 def whisper(path):
-    from faster_whisper import WhisperModel
-    segments, _ = WhisperModel(MODEL, device="cpu", compute_type="int8").transcribe(path, vad_filter=True, language=LANGUAGE)
-    return " ".join(s.text.strip() for s in segments)
+    from faster_whisper import WhisperModel, decode_audio
+    model, audio, language = WhisperModel(MODEL, device="cpu", compute_type="int8"), decode_audio(path), None
+    if LANGUAGES:
+        language = max((p, lang) for lang, p in model.detect_language(audio, vad_filter=True)[2] if lang in LANGUAGES)[1]
+    segments, info = model.transcribe(audio, vad_filter=True, language=language)
+    text = " ".join(s.text.strip() for s in segments)
+    if info.language == "en" or not text:
+        return text
+    # keep the exact words and add an English version so English searches find it
+    segments, _ = model.transcribe(audio, vad_filter=True, language=info.language, task="translate")
+    return text + "\n\nEnglish: " + " ".join(s.text.strip() for s in segments)
 
 
 def transcribe(name, app, profile):
