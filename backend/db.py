@@ -21,8 +21,9 @@ OLD = Path(__file__).resolve().parent.parent / "data"  # the data folder before 
 
 
 def location():
-    """UMM_DATA, else the pointer file, else BASE."""
-    return Path(os.environ.get("UMM_DATA") or (POINTER.read_text().strip() if POINTER.exists() else BASE))
+    """UMM_DATA, else the pointer file if its folder exists (an unplugged drive or a deleted folder falls back), else BASE."""
+    p = POINTER.exists() and Path(POINTER.read_text().strip())
+    return Path(os.environ.get("UMM_DATA") or (p if p and p.is_absolute() and p.is_dir() else BASE))
 
 
 if not os.environ.get("UMM_DATA") and not POINTER.exists() and not (BASE / "umm.db").exists() and (OLD / "umm.db").exists():
@@ -32,6 +33,8 @@ if not os.environ.get("UMM_DATA") and not POINTER.exists() and not (BASE / "umm.
             shutil.move(f, BASE / f.name)
     print(f"umm: moved the data in {OLD} to {BASE}", file=sys.stderr)  # stderr, MCP owns stdout
 DATA = location()
+if not os.environ.get("UMM_DATA") and POINTER.exists() and POINTER.read_text().strip() != str(DATA):
+    print(f"umm: the data folder {POINTER.read_text().strip()} is missing, using {DATA} until it is back", file=sys.stderr)
 FILES = DATA / "files"
 FILES.mkdir(parents=True, exist_ok=True)
 DATA.chmod(0o700)

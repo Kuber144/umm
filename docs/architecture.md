@@ -29,7 +29,7 @@ ui/ (React + Vite)
 
 ## Data folder
 
-The data folder defaults to `~/Library/Application Support/umm`. The backend, the MCP server and the CLI find it the same way: `UMM_DATA` if set (tests and dev), else the absolute path in the pointer file `~/Library/Application Support/umm/location`, else the default. The Swift app does not read it. The backend reads it on every start, so a restart follows a move.
+The data folder defaults to `~/Library/Application Support/umm`. The backend, the MCP server and the CLI find it the same way: `UMM_DATA` if set (tests and dev), else the absolute path in the pointer file `~/Library/Application Support/umm/location`, else the default. When the folder in the pointer is missing (an unplugged drive, a deleted folder), they use the default folder and the backend logs it, so the app keeps working. The pointer stays, and the next start after the folder is back uses it again. The Swift app does not read it. The backend reads it on every start, so a restart follows a move.
 
 `umm.sock`, `umm.log` and `location` always stay in `~/Library/Application Support/umm`, wherever the data is. A Unix socket path must be under 104 bytes, and this one is about 60 for a normal user name. Every client finds it without reading the pointer.
 
