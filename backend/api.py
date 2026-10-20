@@ -57,13 +57,21 @@ def one_line(r):  # a traceback is 10 KB of log for one error
 
 logging.getLogger("uvicorn.error").addFilter(one_line)
 moving = threading.Event()  # set while the data folder moves, writes are refused so none land in the old folder
+writes = 0  # writes in flight, a move waits for them before it copies
 
 
 @app.middleware("http")
 async def refuse_writes(request, call_next):
-    if moving.is_set() and request.method != "GET":
+    global writes
+    if request.method == "GET":
+        return await call_next(request)
+    if moving.is_set():
         return JSONResponse({"detail": "umm is moving its data folder, try again in a moment"}, 503)
-    return await call_next(request)
+    writes += 1
+    try:
+        return await call_next(request)
+    finally:
+        writes -= 1
 
 
 class Item(BaseModel):
@@ -354,6 +362,8 @@ def move_storage(f: Folder):
     if set(os.listdir(new)) - db.KEEP:
         raise HTTPException(400, f"{new} is not empty")
     moving.set()
+    while writes > 1:  # this request is one
+        time.sleep(0.05)
     try:
         shutil.copytree(old, new, dirs_exist_ok=True, ignore=lambda d, names: db.KEEP | {"umm.db", "umm.db-wal", "umm.db-shm"} if d == str(old) else ())
         db.copy_to(new)
