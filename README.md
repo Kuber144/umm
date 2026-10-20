@@ -57,7 +57,7 @@ The hotbar opens with `Ctrl+Shift+Space`.
 - Rows: screenshot, screenshot an area, screenshot with a note, save clipboard (text, an image or copied files), pick from clipboard history, write a note, start or stop recording, record with a note, search, switch profile, open umm, quit.
 - In the note editor `Enter` is a new line, `Cmd+Enter` saves (or takes the screenshot, or starts the recording), `Esc` goes back.
 - Clipboard text is blurred until its row is selected. `Tab` on a clipboard row opens it in the editor, so you can change it before saving.
-- `Esc` closes the hotbar. Every action has its own sound and a short message at the top of the screen. While recording, the menu bar shows the time and has a "Stop recording" item.
+- `Esc` closes the hotbar. Every action has its own sound and a card at the top of the screen that shows what was saved, with the thumbnail for a screenshot. While recording, the menu bar shows the time and has a "Stop recording" item.
 
 The main window opens from the hotbar or the menu bar icon, which turns red while recording.
 

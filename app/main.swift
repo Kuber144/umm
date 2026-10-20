@@ -31,23 +31,27 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
     var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastURL: String?, lastDisplay: Int?, signals: [DispatchSourceSignal] = [], woken = Set<pid_t>()
-    var stopItem: NSMenuItem!, recTimer: Timer?, hudTick = 0, top: CGFloat = 0
+    var stopItem: NSMenuItem!, recTimer: Timer?, cardTick = 0, top: CGFloat = 0, lastProfile = "user"
     var sounds: [String: NSSound] = [:]
-    lazy var hudLabel: NSTextField = {
-        let l = NSTextField(labelWithString: "")
-        l.font = .systemFont(ofSize: 13, weight: .medium)
-        l.textColor = .white
-        return l
-    }()
-    // a small message that never takes focus: the hotbar closes on every action, so this is the only sign that it worked
-    lazy var hudPanel: NSPanel = {
-        let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        let v = NSVisualEffectView()
-        v.material = .hudWindow
-        v.state = .active
+    // feedback card, drawn like a hotbar row: the hotbar closes on every action, so this is what says it worked
+    let tile = NSView(), face = NSImageView(), title = NSTextField(labelWithString: ""), sub = NSTextField(labelWithString: "")
+    lazy var card: NSPanel = {
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 64), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let v = NSView(frame: p.contentView!.bounds)
         v.wantsLayer = true
-        v.layer?.cornerRadius = 10
-        v.addSubview(hudLabel)
+        v.layer?.cornerRadius = 16
+        v.layer?.borderWidth = 1
+        tile.wantsLayer = true
+        tile.layer?.cornerRadius = 10
+        tile.layer?.masksToBounds = true
+        tile.layer?.contentsGravity = .resizeAspectFill
+        tile.frame = NSRect(x: 12, y: 12, width: 40, height: 40)
+        face.frame = tile.bounds
+        tile.addSubview(face)
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        sub.font = .systemFont(ofSize: 12)
+        for (l, y) in [(title, 33), (sub, 14)] { l.frame = NSRect(x: 64, y: CGFloat(y), width: 284, height: 18); l.lineBreakMode = .byTruncatingTail; v.addSubview(l) }
+        v.addSubview(tile)
         p.contentView = v
         p.isOpaque = false
         p.backgroundColor = .clear
@@ -202,6 +206,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         let c = (try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any]
         lastApp = c?["app"] as? String ?? ""
         lastURL = c?["url"] as? String
+        lastProfile = c?["profile"] as? String ?? "user"
         let s = mouseScreen
         // screencapture -D takes the 1-based position in the active display list
         var ids = [CGDirectDisplayID](repeating: 0, count: 16), n: UInt32 = 0
@@ -275,12 +280,15 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         guard let d = m.body as? [String: Any], let t = d["type"] as? String else { return }
         switch t {
         case "hide": hideHotbar()
-        case "saved": hideHotbar(); play("saved"); flash(teal, border: 4, duration: 0.45); hud(d["label"] as? String ?? "Saved")
-        case "error": play("error"); flash(.systemRed, border: 4, duration: 0.45); if let l = d["label"] as? String { hud(l) }
+        case "saved":
+            hideHotbar(); play("saved")
+            let icons = ["note": "text.alignleft", "clip": "doc.on.clipboard", "image": "photo", "files": "doc.on.doc"]
+            card(d["label"] as? String ?? "Saved", d["detail"] as? String ?? "in \(lastProfile)", icon: icons[d["kind"] as? String ?? ""] ?? "checkmark")
+        case "error": play("error"); card(d["label"] as? String ?? "That did not work", icon: "exclamationmark.triangle.fill", warn: true)
         case "capture", "area":
             hideHotbar()
             let note = (d["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.capture(area: t == "area", note: note) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { self.capture(area: t == "area", note: note) }
         case "openMain": hideHotbar(restore: false); showMain(d["query"] as? String)
         case "recording": recording(d["on"] as? Bool == true)
         case "resize":
@@ -315,16 +323,20 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         sounds[name]?.play()
     }
 
-    let teal = NSColor(red: 0.37, green: 0.70, blue: 0.65, alpha: 1)
+    func hex(_ h: String, _ a: CGFloat = 1) -> NSColor {
+        let v = UInt32(h, radix: 16)!
+        return NSColor(srgbRed: CGFloat(v >> 16 & 255) / 255, green: CGFloat(v >> 8 & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: a)
+    }
 
-    // a full screen tint (border 0) or a ring along the screen edge that fades out. Each call has its own window, so calls do not cut each other off
-    func flash(_ color: NSColor, alpha: CGFloat = 1, border: CGFloat = 0, duration: Double) {
+    // a ring along the screen edge that fades out. Its own window each time, so two rings do not cut each other off
+    func ring(_ color: NSColor, duration: Double = 1) {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return }
         let w = NSPanel(contentRect: mouseScreen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         let v = NSView()
         v.wantsLayer = true
-        if border > 0 { v.layer?.borderWidth = border; v.layer?.borderColor = color.withAlphaComponent(alpha).cgColor; v.layer?.cornerRadius = 12 }
-        else { v.layer?.backgroundColor = color.withAlphaComponent(alpha).cgColor }
+        v.layer?.borderWidth = 5
+        v.layer?.borderColor = color.withAlphaComponent(0.75).cgColor
+        v.layer?.cornerRadius = 12
         w.contentView = v
         w.isOpaque = false
         w.backgroundColor = .clear
@@ -339,19 +351,33 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
 
     var mouseScreen: NSScreen { NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main! }
 
-    func hud(_ text: String) {
-        hudTick += 1
-        let tick = hudTick
-        hudLabel.stringValue = text
-        hudLabel.sizeToFit()
-        let z = hudLabel.frame.size, f = mouseScreen.visibleFrame
-        hudLabel.setFrameOrigin(NSPoint(x: 14, y: 9))
-        hudPanel.setFrame(NSRect(x: f.midX - (z.width + 28) / 2, y: f.maxY - f.height * 0.12 - z.height - 18, width: z.width + 28, height: z.height + 18), display: true)
-        hudPanel.alphaValue = 1
-        hudPanel.orderFrontRegardless()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-            guard tick == self.hudTick else { return }
-            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; self.hudPanel.animator().alphaValue = 0 }) { if tick == self.hudTick { self.hudPanel.orderOut(nil) } }
+    // colours are the UI's tokens (ui/src/index.css). An image fills the tile, else an SF Symbol on teal, or blush when warn
+    func card(_ t: String, _ s: String? = nil, icon: String = "checkmark", image: NSImage? = nil, warn: Bool = false) {
+        cardTick += 1
+        let tick = cardTick, dark = card.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua, ink = hex(dark ? "eee7d4" : "1f2a2e")
+        let v = card.contentView!
+        v.layer?.backgroundColor = hex(dark ? "1c282c" : "fffdf7").cgColor
+        v.layer?.borderColor = ink.withAlphaComponent(0.16).cgColor
+        title.stringValue = t
+        title.textColor = ink
+        title.frame.origin.y = s == nil ? 23 : 33
+        sub.stringValue = s ?? ""
+        sub.textColor = hex(dark ? "98a19b" : "535d59")
+        tile.layer?.contents = image
+        tile.layer?.backgroundColor = (image != nil ? .clear : warn ? hex("f29a8a") : hex(dark ? "6cc0b1" : "5fb3a5")).cgColor
+        face.isHidden = image != nil
+        face.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 17, weight: .medium))
+        face.contentTintColor = hex(dark && !warn ? "142024" : "1f2a2e")
+        let f = mouseScreen.visibleFrame, end = NSRect(x: f.midX - 180, y: f.maxY - f.height * 0.12 - 64, width: 360, height: 64)
+        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if !card.isVisible { card.setFrame(still ? end : end.offsetBy(dx: 0, dy: 10), display: false); card.alphaValue = still ? 1 : 0 }
+        card.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { $0.duration = still ? 0 : 0.18; card.animator().alphaValue = 1; card.animator().setFrame(end, display: true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            guard tick == self.cardTick else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; self.card.animator().alphaValue = 0; self.card.animator().setFrame(end.offsetBy(dx: 0, dy: 6), display: true) }) {
+                if tick == self.cardTick { self.card.orderOut(nil) }
+            }
         }
     }
 
@@ -372,8 +398,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             RunLoop.main.add(recTimer!, forMode: .common) // keeps counting while the menu is open
         }
         play(on ? "rec-start" : "rec-stop")
-        flash(on ? .systemRed : teal, alpha: 0.9, border: 6, duration: on ? 0.9 : 0.6)
-        hud(on ? "Recording" : "Recording saved, transcribing")
+        if on { ring(.systemRed) }
+        card(on ? "Recording" : "Recording saved", on ? "Stop from the menu bar or the hotbar" : "Transcribing, in \(lastProfile)", icon: on ? "mic.fill" : "waveform", warn: on)
     }
 
     @objc func stopRecording() {
@@ -393,17 +419,15 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         DispatchQueue.global().async {
             let r = backend.request("POST", "/api/capture", headers: ["Content-Type": "application/json"], body: body)
             // 200 with a null id means the selection was cancelled with Esc: nothing
-            let saved = r.flatMap { (try? JSONSerialization.jsonObject(with: $0.2)) as? [String: Any] }?["id"] is Int
+            let j = r.flatMap { (try? JSONSerialization.jsonObject(with: $0.2)) as? [String: Any] }
+            let img = (j?["file"] as? String).flatMap { backend.request("GET", "/api/thumb/" + $0) }.flatMap { $0.0 == 200 ? NSImage(data: $0.2) : nil }
             DispatchQueue.main.async {
-                if r?.0 != 200 { self.play("error"); self.flash(.systemRed, border: 4, duration: 0.45) } else if saved {
-                    if area { self.play("shutter") }
-                    self.flash(.white, alpha: 0.35, duration: 0.3) // after the request returned, so it is never in the image
-                    self.hud(note == nil ? "Screenshot saved" : "Screenshot saved with note")
+                if let why = [403: "Excluded app", 412: "Allow Screen Recording"][r?.0 ?? 0] {
+                    self.card(why, r?.0 == 403 ? "Nothing was captured" : "System Settings, Privacy and Security", icon: "exclamationmark.triangle.fill", warn: true)
                 }
-                if let why = [403: "Excluded app", 412: "Allow Screen Recording"][r?.0 ?? 0] { // say why in the menu bar for a moment
-                    self.hud(why)
-                    self.status.button?.title = " " + why
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.status.button?.title = "" }
+                if r?.0 != 200 { self.play("error") } else if j?["id"] is Int {
+                    if area { self.play("shutter") }
+                    self.card("Screenshot saved", (note == nil ? "" : "with your note, ") + "in \(self.lastProfile)", image: img)
                 }
             }
         }

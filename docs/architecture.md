@@ -67,6 +67,7 @@ meta: JSON object or null. Every save sets meta.source: hotbar | app (main windo
       meta.path is the absolute path of the file POST /api/import read. umm keeps a copy of an image, and screenshot_days
       deletes only that copy, so the detail can still show where the original is
       meta.transcribing is true on a voice item while Whisper runs. Its content is empty until then
+      meta.reading is the same for a screenshot while OCR runs. A backend start finishes any left over
 note: string or null. What the user wrote about the item, apart from content (OCR text, transcript). Whisper only sets content, so it never touches the note.
       Indexed for search and embedded together with content. Max 100,000 characters
 
@@ -90,7 +91,9 @@ PATCH  /api/items/{id} {content?, profile?, note?}       -> {}       edit text, 
                                                                     note "" clears it, a missing note leaves it
                                                                     A new text on a link drops its fetched title and icon and looks it up again
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?, meta?, note?, display?, area?, profile?} -> {id}  screenshot + OCR + thumbnail, takes ~1s. 403 when the front app is in excluded_apps
+POST   /api/capture    {app?, meta?, note?, display?, area?, profile?} -> {id, file}  screenshot, saved at once with empty content and meta.reading.
+                                                                    The thumbnail and OCR follow in a thread, GET /api/thumb/{file} makes the thumbnail on
+                                                                    request meanwhile. Replies in ~0.1s. 403 when the front app is in excluded_apps
                                                                     (the server reads the front app itself, whatever `app` says). 412 when screencapture fails,
                                                                     which usually means Screen Recording is not allowed for umm
                                                                     display: 1-based number for screencapture -D, default main display
@@ -185,21 +188,21 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 
 ```
 {type: "hide"}                     close the hotbar, focus returns to the previous app
-{type: "saved", label?}            close the hotbar, play the "saved" sound, show label (default "Saved") in the HUD
-                                   (UI already did the fetch)
-{type: "error", label?}            play the error sound, show label in the HUD when given
-{type: "capture", note?}           close the hotbar, wait 250ms, POST /api/capture with the app from context, the
+{type: "saved", label?, detail?, kind?}  close the hotbar, play the "saved" sound, show the card: label (default "Saved"), detail
+                                   (default "in <profile>") and an icon for kind note | clip | image | files (UI already did the fetch)
+{type: "error", label?}            play the error sound, show label (default "That did not work") on a blush card
+{type: "capture", note?}           close the hotbar, wait 120ms, POST /api/capture with the app from context, the
                                    display under the mouse and note when not empty. Plays the shutter sound as the request
-                                   is sent, then the HUD says "Screenshot saved" ("Screenshot saved with note" with a note).
-                                   fallback: fetch POST /api/capture. On 403 or 412 it plays the error sound, and the HUD and
-                                   the status item show "Excluded app" or "Allow Screen Recording" (the status item for 3 seconds)
+                                   is sent, then shows the card "Screenshot saved" with the thumbnail from GET /api/thumb/{file}.
+                                   fallback: fetch POST /api/capture. On 403 or 412 it plays the error sound and the card
+                                   says "Excluded app" or "Allow Screen Recording"
 {type: "area", note?}              same, with area: true. No sound at the start, the shutter plays when it saved.
                                    Nothing happens when the selection is cancelled
 {type: "openMain", query?}         close the hotbar, show the main window, then call window.ummOpen?.({query})
                                    fallback: location.hash = ""
-{type: "recording", on}            on: "rec-start" sound, HUD "Recording", red status item with the elapsed time (m:ss) and a
-                                   "Stop recording" menu item (POST /api/record/stop). off: both go away, "rec-stop" sound,
-                                   HUD "Recording saved, transcribing". A repeat of the current state is ignored
+{type: "recording", on}            on: "rec-start" sound, a red ring along the screen edge, the card "Recording", red status item
+                                   with the elapsed time (m:ss) and a "Stop recording" menu item (POST /api/record/stop).
+                                   off: both go away, "rec-stop" sound, card "Recording saved". A repeat of the current state is ignored
 {type: "resize", height}           hotbar panel height in CSS px, width is fixed at 680
 {type: "openExternal", url}        open in the default browser
 {type: "settings"}                 ask for the login item state, Swift replies with window.ummSettings
@@ -210,9 +213,9 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "quit"}                     kill switch, quits the app and the backend
 ```
 
-The HUD is a small panel with a text label near the top of the screen under the mouse. It never takes focus and fades after 1.6 seconds. The hotbar fades in and slides up 6 points, unless Reduce Motion is on.
+The card is a 360 by 64 point panel near the top of the screen under the mouse, drawn with the UI's colours (`ui/src/index.css`, light or dark): a tile on the left with the screenshot thumbnail or an SF Symbol on teal (blush for recording and errors), a title and a detail line. It never takes focus, slides down as it appears and fades after 2.2 seconds. The hotbar fades in and slides up 6 points. Reduce Motion turns the motion off.
 
-Sounds are `app/sounds/*.wav` (shutter, saved, rec-start, rec-stop, error). `scripts/make-sounds.py` generates them and `build.sh` copies them into the app. `play(name)` falls back to the system sound of that name when a file is missing. Each action also flashes the screen, unless Reduce Motion is on. A screenshot saved gives a white flash, after the request returned so it is not in the image. Recording start is a red ring, recording stop and a saved note or clipboard is a teal ring, an error is a red ring.
+Sounds are `app/sounds/*.wav` (shutter, saved, rec-start, rec-stop, error). `scripts/make-sounds.py` generates them and `build.sh` copies them into the app. `play(name)` falls back to the system sound of that name when a file is missing. Recording start also draws a red ring along the screen edge that fades over a second, unless Reduce Motion is on.
 
 Swift to UI:
 

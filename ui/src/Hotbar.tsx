@@ -85,8 +85,8 @@ export default function Hotbar() {
       label: kind === 'image' ? 'Save clipboard image' : kind === 'files' ? `Save ${nfiles} copied file${nfiles > 1 ? 's' : ''}` : 'Save clipboard',
       detail: kind === 'image' ? null : <span className="peek secret">{chars(clip.replace(/\s+/g, ' '), 70)}</span>,
       edit: kind === 'text' ? () => api.clipHistory().then(h => openNote('clip', h[0]?.text ?? clip), fail) : undefined,  // the context text is cut at 2000
-      run: () => { api.saveClipboard(ctx?.app, 'hotbar', undefined, ctx?.url).then(() => send({ type: 'saved', label: kind === 'image' ? 'Image saved' : kind === 'files' ? `Saved ${nfiles} file${nfiles > 1 ? 's' : ''}` : 'Clipboard saved' }), fail) } }] : []),
-    ...(ctx?.history && ctx.history > 1 ? [{ id: 'hist', icon: 'clip' as const, label: 'Pick from clipboard history', kw: 'recent copies paste', detail: <span className="peek">{ctx.history} recent</span>,
+      run: () => { api.saveClipboard(ctx?.app, 'hotbar', undefined, ctx?.url).then(() => send({ type: 'saved', kind, label: kind === 'image' ? 'Image saved' : kind === 'files' ? `Saved ${nfiles} file${nfiles > 1 ? 's' : ''}` : 'Clipboard saved', detail: kind === 'image' ? undefined : flat(clip) }), fail) } }] : []),
+    ...(ctx?.history ? [{ id: 'hist', icon: 'clip' as const, label: 'Pick from clipboard history', kw: 'recent copies paste', detail: <span className="peek">{ctx.history} recent</span>,
       run: () => { api.clipHistory().then(h => { setHist(h); setMode('clip'); setQ(''); setSel(-1) }, fail) } }] : []),
     { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', detail: note.trim() ? <span className="peek">{chars(note.trim(), 40)}</span> : null, run: () => openNote('save') },
     { id: 'rec', icon: 'voice', label: rec.on ? 'Stop recording' : 'Start recording', kw: 'voice mic audio',
@@ -108,7 +108,7 @@ export default function Hotbar() {
     ...(query && !profiles.all.some(p => p.name === q.trim()) ? [{ id: '+', icon: 'dot' as const, label: `Create "${q.trim()}"`, run: () => pick(q.trim()) }] : []),
   ]
   const histRows: Row[] = hist.filter(h => match(h.text)).map((h, i) => ({ id: '' + i, icon: 'clip', label: flat(h.text), detail: <span className="peek">{ago(h.at)}</span>,
-    run: () => { api.add(h.text, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => send({ type: 'saved', label: 'Clipboard saved' }), fail) }, edit: () => openNote('clip', h.text) }))
+    run: () => { api.add(h.text, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => send({ type: 'saved', kind: 'clip', label: 'Clipboard saved', detail: flat(h.text) }), fail) }, edit: () => openNote('clip', h.text) }))
   // the generic search row goes last while typing, so a specific match wins Enter
   const hits = menu.filter(r => !query || r.id === 'find' || match(r.label + ' ' + r.kw))
   const rows: Row[] = mode === 'profiles' ? profRows : mode === 'clip' ? histRows : query ? [...hits.filter(r => r.id !== 'find'), ...hits.filter(r => r.id === 'find')] : hits
@@ -130,7 +130,7 @@ export default function Hotbar() {
     const t = (then === 'save' ? note : cnote).trim()
     if (then === 'shot') { setCnote(''); send({ type: 'capture', note: t || undefined }) }
     else if (then === 'rec') { setCnote(''); recd(api.recStart('hotbar', ctx?.app, t || undefined)) }
-    else if (t) api.add(t, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => { if (then === 'save') setNote(''); send({ type: 'saved', label: then === 'save' ? 'Note saved' : 'Clipboard saved' }) }, fail)
+    else if (t) api.add(t, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => { if (then === 'save') setNote(''); send({ type: 'saved', kind: then === 'save' ? 'note' : 'clip', label: then === 'save' ? 'Note saved' : 'Clipboard saved', detail: flat(t) }) }, fail)
   }
   const back = () => { setMode('menu'); setQ(''); setSel(-1) }
 

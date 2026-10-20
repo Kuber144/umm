@@ -82,7 +82,7 @@ function lines(it: Item, q: string): [ReactNode, ReactNode] {
     // OCR often starts with the window title, which the row already shows
     const text = it.content.trim().startsWith(t) ? it.content.trim().slice(t.length) : it.content
     if (it.note) return [said(it.note.split('\n')[0]), <>{url}{hl(t, q)}</>]
-    return [hl(t, q), <>{url}{text.trim() ? hl(snip(text, q), q) : 'No text found'}</>]
+    return [hl(t, q), <>{url}{text.trim() ? hl(snip(text, q), q) : m?.reading ? <span className="busy">Reading text...</span> : 'No text found'}</>]
   }
   if (it.kind === 'link') {
     const { url: u, l, note } = linkParts(it)
@@ -201,7 +201,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     <h2>{hl(winTitle(it.app) || from || 'Screenshot', q)}</h2>
     {it.content.trim()
       ? <details className="ocr" open={!!q.trim()}><summary><Icon name="chevron" />Text in image</summary><p>{hl(it.content, q)}</p></details>
-      : <p className="dim">No text found in the image.</p>}
+      : <p className={m?.reading ? 'busy' : 'dim'}>{m?.reading ? 'Reading text...' : 'No text found in the image.'}</p>}
   </> : lp ? <>
     {lp.note && <p className="prose">{hl(lp.note, q)}</p>}
     <a className="card" href={lp.url} onClick={openUrl(lp.url)} data-tip="Open link" data-keys="Cmd O">

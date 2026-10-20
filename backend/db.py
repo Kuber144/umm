@@ -199,7 +199,7 @@ def update(id, content=None, profile=None, note=None):
     if content is not None:  # a new text drops what was fetched for the old link
         db.execute("UPDATE items SET content = ?, kind = ?, vec = NULL, meta = json_remove(meta, '$.link', '$.icon', '$.tried') "
                    "WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')", (content, detect(content), id))
-        db.execute("UPDATE items SET content = ?, vec = NULL, meta = json_remove(meta, '$.transcribing') "
+        db.execute("UPDATE items SET content = ?, vec = NULL, meta = json_remove(meta, '$.transcribing', '$.reading') "
                    "WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
     if note is not None:  # "" clears it
         db.execute("UPDATE items SET note = ?, vec = NULL WHERE rowid = ?", (note or None, id))
@@ -305,9 +305,9 @@ def has_file(name):
 
 
 @locked
-def transcribing():
-    """(id, file) of voice items whose transcription has not finished."""
-    return db.execute("SELECT rowid, file FROM items WHERE json_extract(meta, '$.transcribing')").fetchall()
+def transcribing(key="transcribing"):
+    """(id, file) of voice items whose transcription has not finished, or with key "reading", screenshots whose OCR has not."""
+    return db.execute(f"SELECT rowid, file FROM items WHERE json_extract(meta, '$.{key}')").fetchall()
 
 
 @locked

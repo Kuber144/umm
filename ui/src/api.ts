@@ -1,7 +1,7 @@
 export type Kind = 'screenshot' | 'text' | 'path' | 'link' | 'voice'
 export type Source = 'hotbar' | 'app' | 'cli' | 'mcp'
 export type LinkInfo = { site?: string; title?: string; author?: string; text?: string }
-export type Meta = { source?: Source; agent?: string; agent_version?: string; cwd?: string; session?: string; link?: LinkInfo; icon?: string | null; url?: string; transcribing?: boolean }
+export type Meta = { source?: Source; agent?: string; agent_version?: string; cwd?: string; session?: string; link?: LinkInfo; icon?: string | null; url?: string; transcribing?: boolean; reading?: boolean }
 export type Item = { id: number; profile: string; kind: Kind; content: string; file: string | null; app: string | null; note?: string | null; meta?: Meta | null; created_at: string }
 export type Rec = { on: boolean; seconds: number; transcribing: number }
 export type Profiles = { active: string; all: { name: string; count: number }[] }

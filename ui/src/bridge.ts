@@ -2,7 +2,7 @@ import { api, type Ctx } from './api'
 
 type Msg =
   | { type: 'hide' | 'quit' }
-  | { type: 'saved' | 'error'; label?: string }
+  | { type: 'saved' | 'error'; label?: string; detail?: string; kind?: string }
   | { type: 'capture' | 'area'; note?: string }
   | { type: 'openMain'; query?: string }
   | { type: 'recording'; on: boolean }

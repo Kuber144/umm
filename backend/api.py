@@ -258,17 +258,23 @@ def clipboard_history():
 
 
 def save_shot(name, app_name, meta=None, profile=None, note=None):
-    """OCR and thumbnail the screenshot already written to FILES/name, then save it."""
+    """Saves the screenshot already written to FILES/name at once. The thumbnail and OCR follow in a thread, so the reply is instant."""
     # the same image saved in the last 10 minutes returns that item, so a repeated capture adds nothing
     for id, _, f in db.recent(profile or db.active_profile(), "screenshot", 600):
         if f and (db.FILES / f).is_file() and filecmp.cmp(db.FILES / f, db.FILES / name, shallow=False):
             (db.FILES / name).unlink()
             return id
+    id = db.add("", "screenshot", name, app_name, profile, {**(meta or {}), "reading": True}, note)
+    threading.Thread(target=read_shot, args=(id, name), daemon=True).start()
+    return id
+
+
+def read_shot(id, name):
+    thumb(name)
     # worker threads have no autorelease pool, so Vision objects would leak without one
     with objc.autorelease_pool():
         text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
-    thumb(name)
-    return db.add(text, "screenshot", name, app_name, profile, meta, note)
+    db.update(id, text)  # clears meta.reading
 
 
 def thumb(name):
@@ -288,6 +294,10 @@ def get_thumb(name: str):
     return FileResponse(thumb(Path(name).name))
 
 
+for id, f in db.transcribing("reading"):  # a quit or crash mid OCR
+    threading.Thread(target=read_shot, args=(id, f), daemon=True).start()
+
+
 @app.post("/api/capture")
 def capture(a: Shot | None = None):
     a = a or Shot()
@@ -303,7 +313,8 @@ def capture(a: Shot | None = None):
                                  "allow it in System Settings, Privacy and Security, Screen Recording")
     if a.area and not (db.FILES / name).exists():  # Esc during selection
         return {"id": None}
-    return {"id": save_shot(name, app_name, a.meta or {"source": "hotbar"}, a.profile, a.note)}  # only the hotbar captures without meta
+    id = save_shot(name, app_name, a.meta or {"source": "hotbar"}, a.profile, a.note)  # only the hotbar captures without meta
+    return {"id": id, "file": db.get(id)["file"]}  # the file of the earlier item when this one was a repeat
 
 
 @app.post("/api/clipboard")
