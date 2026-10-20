@@ -9,7 +9,7 @@ Press a hotkey in any Mac app to save what you might need later, then search it 
 - A main window to search, filter, edit and organize everything into profiles.
 - Voice recordings are transcribed on your Mac with Whisper, in English, Hindi or the languages you pick.
 - An MCP server lets Claude Code, Codex, Cursor and other agents search and add memories. A CLI does the same from the terminal.
-- Everything lives in one SQLite file in `data/`. Nothing is uploaded.
+- Everything lives in one SQLite file in `~/Library/Application Support/umm`, or a folder you pick in Settings. Nothing is uploaded.
 
 ## Requirements
 
@@ -123,29 +123,33 @@ See [docs/cli.md](docs/cli.md) for every command, zsh completion and flags.
 
 ## Privacy
 
-- Everything is local. Items, screenshots and recordings stay in `data/` on your Mac. OCR uses Apple Vision and transcription runs locally.
+- Everything is local. Items, screenshots and recordings stay in the data folder on your Mac. OCR uses Apple Vision and transcription runs locally.
 - umm has no account, no telemetry and no TCP port. The backend listens on a Unix socket.
 - Two things use the network. When you save a link, umm fetches that page's title, description and icon, and for tweets and YouTube links it asks their public oEmbed endpoints. Links with a token, key, signature or similar parameter in the query are never fetched. Turn it off with "Look up links" in Settings. The first transcription downloads the Whisper model from Hugging Face.
 - Agents you connect can read your memories. That is their job, so connect only agents you trust.
 
 ## Data and uninstall
 
-All data is in `data/` inside the repo: `umm.db`, `files/` for screenshots and recordings, `settings.json` and `umm.log`. Copy that folder to back it up.
+All data is in `~/Library/Application Support/umm`: `umm.db`, `files/` for screenshots and recordings, and `settings.json`. Copy that folder to back it up. Settings, Storage moves it to another folder, and `umm status` prints where it is. The socket `umm.sock`, the log `umm.log` and the `location` file that points to a moved folder stay in `~/Library/Application Support/umm`.
+
+Before this, data lived in `data/` inside the repo. The first start moves it to `~/Library/Application Support/umm` by itself.
 
 To remove umm:
 
 1. Turn off "Open at login" in Settings, or remove umm in System Settings, General, Login Items.
 2. Run `./stop.sh`.
-3. Delete the repo folder. That removes the app, the backend and your data. Keep `data/` first if you want it.
-4. Remove the CLI with `uv tool uninstall umm-cli`.
-5. Remove the MCP entry with `claude mcp remove umm -s user`, or delete it from your other client's config.
-6. Remove the signing certificate with `scripts/remove-signing.sh`, if you created one.
-7. Optionally remove umm under Screen Recording and Microphone in System Settings, Privacy and Security, and delete the Whisper model from `~/.cache/huggingface/hub`.
+3. Delete the repo folder. That removes the app and the backend.
+4. Delete `~/Library/Application Support/umm`, and the data folder if you moved it. That removes your data. Copy it first if you want it.
+5. Remove the CLI with `uv tool uninstall umm-cli`.
+6. Remove the MCP entry with `claude mcp remove umm -s user`, or delete it from your other client's config.
+7. Remove the signing certificate with `scripts/remove-signing.sh`, if you created one.
+8. Optionally remove umm under Screen Recording and Microphone in System Settings, Privacy and Security, and delete the Whisper model from `~/.cache/huggingface/hub`.
 
 ## Troubleshooting
 
 - Screenshots fail. Screen Recording is not granted to umm. Enable it in System Settings, Privacy and Security, Screen Recording, then run `./stop.sh` and `./start.sh`. After a rebuild you may need to toggle it off and on.
-- Anything else broken. Read `data/umm.log`.
+- Anything else broken. Read `~/Library/Application Support/umm/umm.log`.
+- Memories are missing. Run `umm status` to see the data folder. If `location` in `~/Library/Application Support/umm` names a folder that is missing, such as one on an unplugged drive, plug it back in, or delete `location` to go back to the default folder.
 - A keychain prompt appears during the build. That is `codesign` using the signing certificate. Click Always Allow.
 - Permissions keep resetting after rebuilds. Run `scripts/setup-signing.sh`.
 - umm seems to run twice, or permissions apply to the wrong app. Two copies of umm.app exist, for example from two checkouts. Quit both, keep one folder, and start that one.
@@ -161,7 +165,6 @@ ui/        React + Vite, the hotbar and the main window
 assets/    icon sources
 docs/      architecture, CLI, MCP, plan
 scripts/   signing certificate setup and removal
-data/      runtime files, not source
 build/     umm.app
 ```
 

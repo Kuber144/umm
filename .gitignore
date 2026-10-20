@@ -1,3 +1,4 @@
+# the old data folder, data now lives in ~/Library/Application Support/umm
 data/
 __pycache__/
 .venv/

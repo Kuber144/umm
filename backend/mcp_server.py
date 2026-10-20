@@ -1,5 +1,6 @@
 import atexit
 import http.client
+import importlib
 import json
 import os
 import signal
@@ -31,7 +32,6 @@ SESSION = os.environ.get("CLAUDE_CODE_SESSION_ID") or uuid.uuid4().hex[:8]  # on
 
 STARTED = datetime.now().isoformat(timespec="seconds")
 CLIENT = {}  # agent name and version, set once the client has said hello
-AGENT_FILE = db.DATA / "agents" / f"{SESSION}.json"  # lets the app list connected agents
 
 
 def meta():
@@ -39,22 +39,30 @@ def meta():
             "cwd": CWD, "session": SESSION}
 
 
+def agent_file():  # lets the app list connected agents
+    return db.DATA / "agents" / f"{SESSION}.json"
+
+
 def bye():
-    if AGENT_FILE.exists() and json.loads(AGENT_FILE.read_text()).get("pid") == os.getpid():
-        AGENT_FILE.unlink()
+    if (f := agent_file()).exists() and json.loads(f.read_text()).get("pid") == os.getpid():
+        f.unlink()
 
 
 async def track(ctx, call_next):
-    """Runs on every message. Writes this server's connection file and bumps last_seen."""
+    """Runs on every message. Follows a moved data folder, writes this server's connection file and bumps last_seen."""
+    if db.location() != db.DATA:  # the app moved the data folder, the old one is gone
+        db.db.close()
+        importlib.reload(db)
     result = await call_next(ctx)
     c = ctx.session.client_params
     if c:
         CLIENT.update(agent=c.client_info.name, agent_version=c.client_info.version)
-        AGENT_FILE.parent.mkdir(exist_ok=True)
-        tmp = AGENT_FILE.with_suffix(".tmp")
+        f = agent_file()
+        f.parent.mkdir(exist_ok=True)
+        tmp = f.with_suffix(".tmp")
         tmp.write_text(json.dumps({**meta(), "pid": os.getpid(), "started": STARTED,
                                    "last_seen": datetime.now().isoformat(timespec="seconds")}))
-        tmp.replace(AGENT_FILE)
+        tmp.replace(f)
     return result
 
 
@@ -93,7 +101,7 @@ class Sock(http.client.HTTPConnection):
     def connect(self):
         self.sock = socket.socket(socket.AF_UNIX)
         self.sock.settimeout(30)
-        self.sock.connect(str(db.DATA / "umm.sock"))
+        self.sock.connect(str(db.BASE / "umm.sock"))
 
 
 def api(method, path, body):
@@ -106,7 +114,7 @@ def api(method, path, body):
     except OSError as e:
         raise ToolError(f"the umm app is not running (or not reachable): {e}. Ask the user to open it") from e
     if r.status >= 400:
-        raise ToolError(f"umm backend error {r.status}, see data/umm.log. Screenshots fail when umm.app lacks Screen Recording permission")
+        raise ToolError(f"umm backend error {r.status}, see {db.BASE / 'umm.log'}. Screenshots fail when umm.app lacks Screen Recording permission")
     return json.loads(data)
 
 

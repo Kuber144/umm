@@ -247,6 +247,14 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
             loginItem(nil)
+        case "chooseFolder":
+            let p = NSOpenPanel()
+            p.canChooseFiles = false
+            p.canChooseDirectories = true
+            p.canCreateDirectories = true
+            if p.runModal() == .OK, let path = p.url?.path, let js = try? JSONSerialization.data(withJSONObject: path, options: .fragmentsAllowed) {
+                m.webView?.evaluateJavaScript("window.ummFolder?.(\(String(decoding: js, as: UTF8.self)))")
+            }
         case "quit": NSApp.terminate(nil)
         default: break
         }
