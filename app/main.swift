@@ -49,6 +49,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         var ref: EventHotKeyRef?
         RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | shiftKey), EventHotKeyID(signature: 0x756d6d20, id: 1), GetApplicationEventTarget(), 0, &ref)
 
+        if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
+
         signal(SIGPIPE, SIG_IGN)
         for s in [SIGTERM, SIGINT] {
             signal(s, SIG_IGN)
@@ -113,7 +115,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         if hotbar.isVisible { return hideHotbar() }
         // fetch before activating so the frontmost app is still the user's
         DispatchQueue.global().async {
-            let r = backend.request("GET", "/api/context", wait: 2)
+            let first = backend.request("GET", "/api/context", wait: 2)
+            let r = first?.0 == 200 ? first : backend.request("GET", "/api/context", wait: 2) // the page breaks on "{}", so try twice
             DispatchQueue.main.async { self.showHotbar(r?.0 == 200 ? String(decoding: r!.2, as: UTF8.self) : "{}") }
         }
     }
@@ -128,7 +131,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             .flatMap { ids.prefix(Int(n)).firstIndex(of: $0) }.map { $0 + 1 }
         let f = s.visibleFrame, h = hotbar.frame.height
         hotbar.setFrame(NSRect(x: f.midX - 340, y: f.maxY - f.height * 0.2 - h, width: 680, height: h), display: false)
-        NSApp.activate(ignoringOtherApps: true)
+        if main == nil { NSApp.activate(ignoringOtherApps: true) } // activating would raise the main window over the user's app
         hotbar.makeKeyAndOrderFront(nil)
         hotbar.makeFirstResponder(hotbarView)
         hotbarView.evaluateJavaScript("window.ummShow?.(\(ctx))")
@@ -222,8 +225,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             let saved = r.flatMap { (try? JSONSerialization.jsonObject(with: $0.2)) as? [String: Any] }?["id"] is Int
             DispatchQueue.main.async {
                 if r?.0 != 200 { self.play("Basso") } else if saved { self.play("Pop") }
-                if r?.0 == 403 { // excluded app: say why in the menu bar for a moment
-                    self.status.button?.title = " Excluded app"
+                if let why = [403: " Excluded app", 412: " Allow Screen Recording"][r?.0 ?? 0] { // say why in the menu bar for a moment
+                    self.status.button?.title = why
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.status.button?.title = "" }
                 }
             }
