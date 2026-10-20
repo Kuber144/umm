@@ -81,7 +81,7 @@ Each hit shows the id, kind, age, the profile with `-A`, the app and a one line 
 | --- | --- |
 | `umm show 42` | Print the item in full with its app, file path and meta. `--json` adds `path`. |
 | `umm copy 42` | Copy the text, path or link to the clipboard. Alias `cp`. |
-| `umm open 42` | Open the screenshot or recording, open the link in the browser, or reveal the path in Finder. Alias `o`. A screenshot past `screenshot_days` has no image left to open. |
+| `umm open 42` | Open the screenshot or recording, open the link in the browser, or reveal the path in Finder. Alias `o`. A screenshot past `screenshot_days` has no image left to open. An imported image's original is still at `meta.path`. |
 | `umm open` | With no id, open the main window. |
 | `umm edit 42` | Edit the text in `$VISUAL` or `$EDITOR`. Alias `e`. |
 | `umm mv 42 work` | Move to another profile. Takes several ids. |

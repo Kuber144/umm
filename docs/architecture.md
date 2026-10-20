@@ -64,6 +64,8 @@ meta: JSON object or null. Every save sets meta.source: hotbar | app (main windo
       Enriched links set {link: {site, title, author, text}, icon}, see "Link enrichment". A link that was refused or could not
       be read gets {tried: 1} instead.
       meta.url is the page or document the user was on, when Swift could read it over Accessibility (see /api/context)
+      meta.path is the absolute path of the file POST /api/import read. umm keeps a copy of an image, and screenshot_days
+      deletes only that copy, so the detail can still show where the original is
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0&source=&agent=&project=&session=&mode=hybrid -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
@@ -95,7 +97,8 @@ POST   /api/capture    {app?, meta?, display?, area?, profile?} -> {id}  screens
 POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an image file (png, jpeg, heic, gif, tiff, webp, read by content with sips -g format,
                                                                     not by extension) is converted to jpg and saved as a screenshot with OCR and a thumbnail.
                                                                     Anything else becomes a path item: folders, and images that are unreadable or broken. 400 when path is not an absolute path
-                                                                    that exists (~/ is expanded). meta defaults to {source: "app"}, since the main window drops files
+                                                                    that exists (~/ is expanded). meta defaults to {source: "app"}, since the main window drops files.
+                                                                    meta.path is set to the file's absolute path
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
                                                                     clipboard is marked secret (see /api/context)
@@ -143,7 +146,8 @@ enrich_links:   default true, fetch title and description of saved links (not li
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
 screenshot_days: default 0 (keep forever). A background thread runs at backend start and every 24 hours. It deletes the image
-                and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay
+                and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay.
+                It removes umm's copy only. An imported image's original file is left alone, and meta.path still names it
 ```
 
 ## Link enrichment

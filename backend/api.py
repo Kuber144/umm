@@ -304,7 +304,7 @@ def import_file(i: Import):
     p = Path(i.path).expanduser()
     if not p.is_absolute() or not p.exists():
         raise HTTPException(400, f"no file at {i.path}")
-    meta = i.meta or {"source": "app"}  # files are dropped on the main window
+    meta = {**(i.meta or {"source": "app"}), "path": str(p)}  # files are dropped on the main window. path survives screenshot_days
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
     # sips prints only the path for a non-image, so "a png" must not count. An unreadable or broken image is saved as a path
     if (p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition("format: ")[2] in IMAGES
