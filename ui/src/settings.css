@@ -58,4 +58,5 @@
 .cseen { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
 .cn { min-width: 80px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cn span { color: var(--ink-3); font-size: 12px; }
-.state.left { justify-items: start; padding: 24px 2px 0; text-align: left; }
+.state.left { justify-items: start; padding: 24px 0 0; text-align: left; }
+.state.left p { max-width: none; }
