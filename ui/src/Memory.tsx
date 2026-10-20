@@ -13,13 +13,17 @@ export type Act = {
 }
 
 export const copyText = (it: Item) => (it.kind === 'link' ? it.content.split(/\s+/)[0] : it.content)
+// Where an agent memory came from: the project folder, with the full detail on hover.
+export const projectName = (p: string) => p.split('/').filter(Boolean).slice(-2).join('/')
+const appName = (a: string | null) => a?.split(':')[0] ?? ''
+const winTitle = (a: string | null) => a?.split(/:\s*/).slice(1).join(': ') || ''
 
 // Short piece of text around the first match, so a long OCR dump shows why it matched.
-function snip(text: string, q: string, n = 240) {
+function snip(text: string, q: string, n = 150) {
   const flat = text.replace(/\s+/g, ' ').trim()
   const w = q.split(/\s+/).find(Boolean)
   const at = w ? flat.toLowerCase().indexOf(w.toLowerCase()) : -1
-  const from = Math.max(0, at - 60)
+  const from = Math.max(0, at - 40)
   return (from ? '... ' : '') + flat.slice(from, from + n) + (flat.length > from + n ? ' ...' : '')
 }
 
@@ -28,7 +32,8 @@ function Voice({ file }: { file: string }) {
   const [failed, setFailed] = useState(false)
   useEffect(() => () => { if (src) URL.revokeObjectURL(src) }, [src])
   const load = () => fetch(fileUrl(file)).then(r => r.blob()).then(b => setSrc(URL.createObjectURL(b)), () => setFailed(true))
-  return src ? <audio src={src} controls autoPlay /> : <button className="btn" onClick={load}>{failed ? 'Could not load, retry' : 'Play recording'}</button>
+  return src ? <audio src={src} controls autoPlay />
+    : <button className="play" onClick={load} title={failed ? 'Could not load, click to retry' : 'Play recording'} aria-label="Play recording"><Icon name="play" /></button>
 }
 
 function Link({ content, q }: { content: string; q: string }) {
@@ -38,7 +43,7 @@ function Link({ content, q }: { content: string; q: string }) {
   const site = /youtu\.?be/.test(host) ? 'YouTube' : /^(x|twitter)\.com$/.test(host) ? 'X post' : ''
   return <>
     <a className="link" href={url} onClick={e => { e.preventDefault(); send({ type: 'openExternal', url }) }}>
-      <b>{hl(site || host, q)}</b>{site && <span> {host}</span>}<span className="dim">{hl(tail, q)}</span>
+      <Icon name="link" /><b>{hl(site || host, q)}</b>{site && <span> {host}</span>}<span>{hl(tail, q)}</span>
     </a>
     {rest.length > 0 && <p className="txt">{hl(rest.join(' '), q)}</p>}
   </>
@@ -53,57 +58,71 @@ export function Row({ it, q, sel, all, profiles, act, onSelect }: {
   const [open, setOpen] = useState(false)
   useEffect(() => { if (sel) el.current?.scrollIntoView({ block: 'nearest' }) }, [sel])
   const long = it.content.length > 360 || it.content.split('\n').length > 6
-  const text = <p className={'txt' + (long && !open ? ' clamp' : '')}>{hl(it.content, q)}</p>
   const i = it.content.lastIndexOf('/')
-
-  const edit = () => {
-    const done = () => (ta.current!.value.trim() !== it.content ? act.save(it, ta.current!.value) : Promise.resolve()).then(() => setEditing(false))
-    return <div className="edit">
-      <textarea ref={ta} autoFocus defaultValue={it.content} rows={Math.min(10, it.content.split('\n').length + 1)}
-        onFocus={e => e.currentTarget.setSelectionRange(it.content.length, it.content.length)}
-        onKeyDown={e => {
-          if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
-          if (e.key === 'Enter' && e.metaKey) done()
-        }} />
-      <div className="editbar">
-        <button className="btn primary" onClick={done}>Save</button>
-        <button className="btn" onClick={() => setEditing(false)}>Cancel</button>
-        <span className="dim">Cmd+Enter saves, Esc cancels</span>
-      </div>
-    </div>
-  }
+  const done = () => (ta.current!.value.trim() !== it.content ? act.save(it, ta.current!.value) : Promise.resolve()).then(() => setEditing(false))
+  const tool = (icon: Parameters<typeof Icon>[0]['name'], label: string, fn: () => void) =>
+    <button className="tool" title={label} aria-label={label} onClick={e => { e.stopPropagation(); fn() }}><Icon name={icon} /></button>
 
   return (
     <li ref={el} className={'row' + (sel ? ' sel' : '')} onClick={onSelect}>
-      <div className="gut"><Icon name={it.kind === 'text' ? 'text' : it.kind} /><time title={when(it.created_at).toLocaleString()}>{ago(it.created_at)}</time></div>
+      <div className="gut">
+        <time title={when(it.created_at).toLocaleString()}>{ago(it.created_at)}</time>
+        <div className="line">
+          {all ? <span className="from" title={it.app ?? undefined}><Dot name={it.profile} />{it.profile}</span>
+            : it.app && <span className="from" title={it.app}>{appName(it.app)}</span>}
+          <span className="acts">
+            {it.kind === 'path' && tool('reveal', 'Reveal in Finder', () => act.reveal(it))}
+            {tool('copy', 'Copy', () => act.copy(it))}
+            {it.kind !== 'screenshot' && tool('edit', 'Edit', () => setEditing(true))}
+            <label className="tool" title="Move to profile">
+              <Icon name="move" />
+              <select value="" onChange={e => e.target.value && act.move(it, e.target.value)} aria-label="Move to profile">
+                <option value="">Move to...</option>
+                {profiles.filter(p => p !== it.profile).map(p => <option key={p}>{p}</option>)}
+              </select>
+            </label>
+            {tool('trash', 'Delete', () => act.del(it))}
+          </span>
+        </div>
+      </div>
       <div className="body">
-        {editing ? edit() : it.kind === 'screenshot' ? (
+        {editing ? (
+          <div className="edit">
+            <textarea ref={ta} autoFocus defaultValue={it.content} rows={Math.min(10, it.content.split('\n').length + 1)}
+              onFocus={e => e.currentTarget.setSelectionRange(it.content.length, it.content.length)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
+                if (e.key === 'Enter' && e.metaKey) done()
+              }} />
+            <div className="btns">
+              <button className="btn primary" onClick={done}>Save</button>
+              <button className="btn" onClick={() => setEditing(false)}>Cancel</button>
+            </div>
+          </div>
+        ) : it.kind === 'screenshot' ? (
           <div className="shot">
             <button className="thumb" onClick={() => act.zoom(it)} aria-label="Open screenshot">
               <img loading="lazy" src={fileUrl(it.file!)} alt="" />
             </button>
-            <p className="txt ocr">{hl(snip(it.content, q), q) || <span className="dim">No text found</span>}</p>
+            <div className="cap">
+              <b>{hl(winTitle(it.app) || appName(it.app) || 'Screenshot', q)}</b>
+              <p className="ocr">{hl(snip(it.content, q), q) || 'No text found'}</p>
+            </div>
           </div>
         ) : it.kind === 'link' ? <Link content={it.content} q={q} />
-          : it.kind === 'path' ? <code className="path"><span className="dim">{hl(it.content.slice(0, i + 1), q)}</span>{hl(it.content.slice(i + 1), q)}</code>
-          : <>{text}{it.kind === 'voice' && it.file && <Voice file={it.file} />}</>}
-        {long && !editing && it.kind !== 'screenshot' && <button className="more" onClick={() => setOpen(!open)}>{open ? 'Show less' : 'Show more'}</button>}
-        <div className="meta">
-          {all && <span className="ptag"><Dot name={it.profile} />{it.profile}</span>}
-          {it.app && <span className="app">{it.app}</span>}
-          <div className="acts">
-          {it.kind === 'path' && <button className="btn" onClick={() => act.reveal(it)}>Reveal</button>}
-          <button className="btn" onClick={() => act.copy(it)}>Copy</button>
-          {it.kind !== 'screenshot' && !editing && <button className="btn" onClick={() => setEditing(true)}>Edit</button>}
-          <label className="btn sel-move">Move
-            <select value="" onChange={e => e.target.value && act.move(it, e.target.value)} aria-label="Move to profile">
-              <option value="">Move to...</option>
-              {profiles.filter(p => p !== it.profile).map(p => <option key={p}>{p}</option>)}
-            </select>
-          </label>
-          <button className="btn danger" onClick={() => act.del(it)}>Delete</button>
-          </div>
-        </div>
+          : it.kind === 'path' ? <code className="path"><Icon name="path" /><span><i>{hl(it.content.slice(0, i + 1), q)}</i>{hl(it.content.slice(i + 1), q)}</span></code>
+          : <div className={it.kind === 'voice' ? 'voice' : undefined}>
+              {it.kind === 'voice' && it.file && <Voice file={it.file} />}
+              <div>
+                <p className={'txt' + (long && !open ? ' clamp' : '')}>{hl(it.content, q)}</p>
+                {long && <button className="more" onClick={() => setOpen(!open)}>{open ? 'Show less' : 'Show more'}</button>}
+              </div>
+            </div>}
+        {it.meta?.cwd && !editing && (
+          <p className="prov" title={[it.meta.agent && `${it.meta.agent} ${it.meta.agent_version ?? ''}`, it.meta.cwd, it.meta.session && `session ${it.meta.session}`].filter(Boolean).join('\n')}>
+            <Icon name="path" />{projectName(it.meta.cwd)}
+          </p>
+        )}
       </div>
     </li>
   )
@@ -123,12 +142,12 @@ export function Detail({ it, act, onClose, step }: { it: Item; act: Act; onClose
     <div className="detail" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="stage"><img src={fileUrl(it.file!)} alt="" /></div>
       <aside>
-        <div className="dhead"><b>{ago(it.created_at)}</b><span className="dim">{when(it.created_at).toLocaleString()}</span>
-          {it.app && <span className="dim">{it.app}</span>}</div>
+        <h2>{winTitle(it.app) || appName(it.app) || 'Screenshot'}</h2>
+        <p className="dim" title={when(it.created_at).toLocaleString()}>{appName(it.app)}{it.app ? ', ' : ''}{ago(it.created_at)}</p>
         <pre className="ocrfull">{it.content || 'No text found in this screenshot.'}</pre>
-        <div className="editbar">
+        <div className="btns">
           <button className="btn primary" onClick={() => act.copy(it)}>Copy text</button>
-          <button className="btn danger" onClick={() => { act.del(it); onClose() }}>Delete</button>
+          <button className="btn" onClick={() => { act.del(it); onClose() }}>Delete</button>
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </aside>

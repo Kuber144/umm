@@ -1,18 +1,24 @@
-.bar { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; }
-.ask { display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 18px; border-bottom: 1px solid var(--line); color: var(--ink-3); }
-.ask input { flex: 1; min-width: 0; border: 0; background: none; font-size: 18px; color: var(--ink); }
+.bar { overflow: hidden; border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); }
+.ask { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px; color: var(--ink-3); border-bottom: 1px solid var(--line); }
+.ask .logo { width: 30px; height: 30px; margin: -3px -2px -3px -3px; flex: none; }
+.ask input { flex: 1; min-width: 0; border: 0; background: none; font-size: 17px; color: var(--ink); }
 .ask input::placeholder { color: var(--ink-3); }
-.pill { display: inline-flex; align-items: center; font-size: 12px; color: var(--ink-2); border: 1px solid var(--line-strong); border-radius: 11px; padding: 2px 9px 2px 8px; }
-.pill .dot { margin-right: 6px; }
-.rows, .mems { list-style: none; margin: 0; padding: 6px; }
-.mems { border-top: 1px solid var(--line); max-height: 280px; overflow: auto; }
-.rows li, .mems li { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; border-radius: 8px; color: var(--ink); }
-.rows li > .ic, .mems li > .ic { color: var(--ink-3); }
-.rows li.on, .mems li.on { background: color-mix(in srgb, var(--accent) 15%, transparent); }
-.on > .ic { color: var(--accent); }
+.rows, .mems { list-style: none; margin: 0; padding: 8px; }
+.mems { border-top: 1px solid var(--line); max-height: 264px; overflow: auto; }
+.rows li, .mems li { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 8px; border-radius: 10px; }
+.rows li.split { margin-bottom: 9px; position: relative; }
+.rows li.split::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -5px; height: 1px; background: var(--line); }
+.tile { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 7px; background: var(--paper-2); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
+.tile .ic { width: 15px; height: 15px; }
+.tile .dot { margin: 0; }
+li.on { background: var(--teal-tint); }
+li.on .tile { background: var(--teal); color: var(--on-teal); box-shadow: inset 0 0 0 1.5px var(--ink); }
 .label { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.peek { font-size: 12.5px; color: var(--ink-3); display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
-.live { display: inline-flex; align-items: center; gap: 7px; color: var(--danger); font: 500 13px var(--font); font-variant-numeric: tabular-nums; }
-.none { color: var(--ink-3); font-size: 13px; }
-.note textarea { display: block; width: 100%; border: 0; background: none; resize: none; padding: 16px 18px 6px; font-size: 15px; line-height: 1.5; min-height: 132px; max-height: 340px; }
-.notebar { display: flex; justify-content: space-between; align-items: center; padding: 8px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
+.peek { font-size: 12.5px; color: var(--ink-3); display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
+.live { display: inline-flex; align-items: center; gap: 8px; color: var(--blush-ink); font: 600 13px var(--font); font-variant-numeric: tabular-nums; }
+.none { color: var(--ink-3); font-size: 13px; padding-left: 8px; }
+.note textarea { display: block; width: 100%; border: 0; background: none; resize: none; padding: 18px 20px 4px; font-size: 15px; line-height: 1.55; min-height: 140px; max-height: 340px; }
+.note .nfrom { margin: 0; padding: 4px 20px 14px; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+footer { display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 20px; background: var(--paper-2); border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
+footer .fprof { display: inline-flex; align-items: center; color: var(--ink-2); font-weight: 500; }
+footer kbd { background: var(--paper-3); margin: 0 4px 0 10px; }

@@ -3,6 +3,7 @@ import { api, type Ctx, type Item, type Profiles } from './api'
 import { native, pending, send } from './bridge'
 import { copyText } from './Memory'
 import { Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
+import icon from '../../assets/icon.svg'
 import './hotbar.css'
 
 type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void }
@@ -110,31 +111,35 @@ export default function Hotbar() {
     else if (e.key === 'Escape') { e.preventDefault(); if (mode === 'profiles') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
   }
 
+  const tile = (r: Row) => <span className="tile">{r.icon === 'dot' ? <Dot name={r.label} /> : <Icon name={r.icon} />}</span>
+  const foot = (
+    <footer>
+      <span className="fprof" title="Active profile: new saves land here"><Dot name={active || 'user'} />{active}</span>
+      <span className="hint">{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> save <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
+    </footer>
+  )
+
   return (
     <div className="bar" ref={root} onKeyDown={onKey}>
       {mode === 'note' ? (
         <div className="note">
           <textarea ref={area} value={note} onChange={e => setNote(e.target.value)} rows={5} placeholder="Write it down. Enter makes a new line." spellCheck />
-          <div className="notebar">
-            <span className="peek"><Dot name={active} />{active}{ctx?.app && <>, from {ctx.app.slice(0, 50)}</>}</span>
-            <span><Kbd>Esc</Kbd> back <Kbd>Cmd Enter</Kbd> save</span>
-          </div>
+          {ctx?.app && <p className="nfrom">From {ctx.app.slice(0, 70)}</p>}
         </div>
       ) : (
         <>
           <div className="ask">
-            <Icon name="search" />
+            <img className="logo" src={icon} alt="" />
             <input ref={input} value={q} onChange={e => { setQ(e.target.value); setSel(-1) }} spellCheck={false} autoFocus
               placeholder={mode === 'profiles' ? 'Pick a profile, or type a new name' : 'umm... what do you want to keep or find?'} />
-            <span className="pill" title="Active profile, new saves land here"><Dot name={active} />{active}</span>
           </div>
           <ul className="rows" role="listbox">
             {rows.map((r, i) => (
-              <li key={r.id} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
-                {r.icon === 'dot' ? <Dot name={r.label} /> : <Icon name={r.icon} />}
+              <li key={r.id} role="option" aria-selected={i === at} className={(i === at ? 'on' : '') + (!query && mode === 'menu' && (r.id === 'rec' || r.id === 'prof') ? ' split' : '')}
+                onMouseMove={() => setSel(i)} onClick={() => run(i)}>
+                {tile(r)}
                 <span className="label">{r.label}</span>
                 {r.detail}
-                {i === at && <Kbd>Enter</Kbd>}
               </li>
             ))}
             {!rows.length && <li className="none">No profile matches</li>}
@@ -145,18 +150,18 @@ export default function Hotbar() {
                 const i = rows.length + j
                 return (
                   <li key={m.id} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
-                    <Icon name={m.kind === 'text' ? 'text' : m.kind} />
+                    <span className="tile"><Icon name={m.kind === 'text' ? 'text' : m.kind} /></span>
                     <span className="label">{hl(m.content.replace(/\s+/g, ' ').slice(0, 120), q)}</span>
                     {m.profile !== active && <span className="peek"><Dot name={m.profile} />{m.profile}</span>}
                     <span className="peek">{ago(m.created_at)}</span>
-                    {i === at && <Kbd>Enter</Kbd>}
-                  </li>
+                      </li>
                 )
               })}
             </ul>
           )}
         </>
       )}
+      {foot}
     </div>
   )
 }

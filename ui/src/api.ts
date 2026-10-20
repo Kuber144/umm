@@ -1,5 +1,6 @@
 export type Kind = 'screenshot' | 'text' | 'path' | 'link' | 'voice'
-export type Item = { id: number; profile: string; kind: Kind; content: string; file: string | null; app: string | null; created_at: string }
+export type Meta = { agent?: string; agent_version?: string; cwd?: string; session?: string }
+export type Item = { id: number; profile: string; kind: Kind; content: string; file: string | null; app: string | null; meta?: Meta | null; created_at: string }
 export type Rec = { on: boolean; seconds: number; transcribing: number }
 export type Profiles = { active: string; all: { name: string; count: number }[] }
 export type Ctx = { app: string; profile: string; clipboard: string; recording: Rec }

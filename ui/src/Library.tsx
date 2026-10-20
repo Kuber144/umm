@@ -1,29 +1,18 @@
-import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { api, type Item, type Kind, type Profiles, type Rec } from './api'
 import { pending, send } from './bridge'
-import { Detail, Row, copyText, type Act } from './Memory'
-import { Dot, Kbd, clock } from './ui'
+import { Detail, Row, copyText, projectName, type Act } from './Memory'
+import { Dot, Icon, Kbd, Pop, clock } from './ui'
 import icon from '../../assets/icon.svg'
 import './main.css'
 
 const PAGE = 40
 const KINDS: [Kind, string][] = [['screenshot', 'Screenshots'], ['text', 'Notes'], ['path', 'Paths'], ['link', 'Links'], ['voice', 'Voice']]
-const SUB: Record<string, string> = {
-  user: 'What you saved.', agent: 'What Claude and other agents remembered.', '*': 'Everything, from every profile.',
-}
 const EMPTY: Record<string, string> = {
   user: 'Press Ctrl+Shift+Space, then Enter, to keep what is on your screen. Or write something above.',
   agent: 'Ask Claude to remember something and it shows up here.',
 }
-
-function Chip({ label, value, clear, children }: { label: string; value: string; clear: () => void; children: ReactNode }) {
-  return (
-    <span className={'chip pick' + (value ? ' on' : '')}>
-      <span>{value ? `${label}: ${value}` : label}</span>{children}
-      {value && <button className="x" onClick={clear} aria-label={`Remove ${label} filter`}>x</button>}
-    </span>
-  )
-}
+const day = (v: string) => new Date(v + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
 export default function Library() {
   const [profiles, setProfiles] = useState<Profiles>({ active: 'user', all: [] })
@@ -33,6 +22,8 @@ export default function Library() {
   const [app, setApp] = useState('')
   const [since, setSince] = useState('')
   const [until, setUntil] = useState('')
+  const [project, setProject] = useState('')
+  const [projects, setProjects] = useState<string[]>([])
   const [sort, setSort] = useState('')
   const [apps, setApps] = useState<{ app: string; count: number }[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -55,6 +46,8 @@ export default function Library() {
   const toastTimer = useRef(0)
   const del = useRef<{ it: Item; timer: number } | null>(null)
 
+  // project is filtered here because the API only knows the app name
+  const list = project ? items.filter(i => i.meta?.cwd === project) : items
   const sortNow = sort === 'relevance' && !q.trim() ? 'new' : sort || (q.trim() ? 'relevance' : 'new')
   const page = (offset: number, limit = PAGE) => api.items({
     q: q.trim(), profile: scope, kind: kinds.join(','), app, since, until, sort: sortNow, limit, offset,
@@ -111,8 +104,8 @@ export default function Library() {
   const order = [...names, '*']
   const count = (n: string) => (n === '*' ? profiles.all.reduce((s, p) => s + p.count, 0) : profiles.all.find(p => p.name === n)?.count ?? 0)
   const custom = scope !== '*' && scope !== 'user' && scope !== 'agent'
-  const filtered = !!(q.trim() || kinds.length || app || since || until)
-  const clearFilters = () => { setQ(''); setKinds([]); setApp(''); setSince(''); setUntil('') }
+  const filtered = !!(q.trim() || kinds.length || app || since || until || project)
+  const clearFilters = () => { setQ(''); setKinds([]); setApp(''); setSince(''); setUntil(''); setProject('') }
 
   // initial load and refresh when the window regains focus (hotkey saves happen while it is hidden)
   useEffect(() => { refreshProfiles(); api.record().then(setRec, () => {}) }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -127,6 +120,7 @@ export default function Library() {
     return () => clearTimeout(t)
   }, [scope, q, kinds, app, since, until, sort]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (scope) api.apps(scope).then(setApps, () => setApps([])) }, [scope, items.length > 0])
+  useEffect(() => { setProjects(p => [...new Set([...p, ...items.flatMap(i => (i.meta?.cwd ? [i.meta.cwd] : []))])]) }, [items])
   useEffect(() => { const t = setInterval(tick, 30000); return () => clearInterval(t) }, [])
 
   // recording: poll only while it matters, and pick up the voice item when transcribing ends
@@ -173,15 +167,15 @@ export default function Library() {
       if (e.metaKey && /^[1-9]$/.test(e.key)) { if (order[+e.key - 1]) { e.preventDefault(); go(order[+e.key - 1]) } return }
       if (typing) {
         if (t === search && e.key === 'Escape') { if (q) setQ(''); else t.blur() }
-        else if (t === search && e.key === 'ArrowDown' && items.length) { e.preventDefault(); t.blur(); setSel(0) }
+        else if (t === search && e.key === 'ArrowDown' && list.length) { e.preventDefault(); t.blur(); setSel(0) }
         else if (t === composerRef.current && e.key === 'Escape') t.blur()
         return
       }
-      const it = items[sel]
-      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); setSel(s => Math.min(items.length - 1, s + 1)) }
+      const it = list[sel]
+      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); setSel(s => Math.min(list.length - 1, s + 1)) }
       else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); setSel(s => (s <= 0 && q ? (search?.focus(), -1) : Math.max(0, s - 1))) }
       else if (e.key === 'Enter' && it && t.tagName !== 'BUTTON' && t.tagName !== 'A') { e.preventDefault(); primary(it) }
-      else if ((e.key === 'Backspace' || e.key === 'Delete') && it) { e.preventDefault(); remove(it); setSel(s => Math.min(s, items.length - 2)) }
+      else if ((e.key === 'Backspace' || e.key === 'Delete') && it) { e.preventDefault(); remove(it); setSel(s => Math.min(s, list.length - 2)) }
       else if (e.key === 'Escape') setSel(-1)
       else if (e.key === '/') { e.preventDefault(); search?.focus() }
     }
@@ -213,105 +207,134 @@ export default function Library() {
   }
   const grid = kinds.length === 1 && kinds[0] === 'screenshot'
 
+  const n = count(scope)
+  const caption = scope === 'agent' ? `${n} from Claude and other agents` : scope === '*' ? `${n} across all profiles` : `${n} ${n === 1 ? 'memory' : 'memories'}`
+  const nFilters = +!!app + +!!since + +!!until + +!!project
+  const sortLabel = { new: 'Newest first', old: 'Oldest first', relevance: 'Best match' }[sortNow]
+
   return (
     <div className="shell">
       <aside className="side">
         <div className="brand">
           <img src={icon} alt="" />
-          <div><span className="word">umm</span><span className="dots" aria-hidden="true"><i /><i /><i /></span><small>u might miss</small></div>
+          <span className="word">umm</span><span className="dots" aria-hidden="true"><i /><i /><i /></span>
         </div>
         <nav>
           {names.map(n => (
-            <button key={n} className={'prof' + (scope === n ? ' on' : '')} onClick={() => go(n)} title={n === profiles.active ? 'New saves land here' : undefined}>
-              <Dot name={n} /><span className="name">{n}</span>{n === profiles.active && <em>saves here</em>}<span className="n">{count(n)}</span>
+            <button key={n} className={'prof' + (scope === n ? ' on' : '') + (n === 'agent' ? ' agent' : '')} onClick={() => go(n)} title={n === profiles.active ? 'New saves land here' : undefined}>
+              <Dot name={n} /><span className="name"><span>{n}</span></span><span className="n">{count(n)}</span>
             </button>
           ))}
-          <button className={'prof all' + (scope === '*' ? ' on' : '')} onClick={() => go('*')}>
-            <span className="name">All profiles</span><span className="n">{count('*')}</span>
-          </button>
           {creating
             ? <input className="newprof" autoFocus placeholder="Profile name" onBlur={e => create(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = ''; e.currentTarget.blur() } }} />
-            : <button className="prof add" onClick={() => setCreating(true)}>New profile</button>}
+            : <button className="prof add" onClick={() => setCreating(true)}><Icon name="plus" /><span className="name"><span>New profile</span></span></button>}
         </nav>
-        <dl className="keys">
-          <dt><Kbd>Cmd</Kbd><Kbd>K</Kbd></dt><dd>Search</dd>
-          <dt><Kbd>Cmd</Kbd><Kbd>1-9</Kbd></dt><dd>Profile</dd>
-          <dt><Kbd>Up</Kbd><Kbd>Down</Kbd></dt><dd>Move</dd>
-          <dt><Kbd>Enter</Kbd></dt><dd>Copy or open</dd>
-          <dt><Kbd>Del</Kbd></dt><dd>Delete</dd>
-        </dl>
+        <button className={'prof all' + (scope === '*' ? ' on' : '')} onClick={() => go('*')}>
+          <span className="name"><span>All profiles</span></span><span className="n">{count('*')}</span>
+        </button>
       </aside>
 
       <main className={scope === 'agent' ? 'agent' : ''}>
         <header className="top">
           <div className="title">
-            {renaming !== null
-              ? <input className="rename" autoFocus defaultValue={scope} onBlur={e => rename(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = scope; e.currentTarget.blur() } }} />
-              : <h1>{scope === '*' ? 'All profiles' : scope}</h1>}
+            <div className="h">
+              {renaming !== null
+                ? <input className="rename" autoFocus defaultValue={scope} onBlur={e => rename(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = scope; e.currentTarget.blur() } }} />
+                : <h1>{scope === '*' ? 'All profiles' : scope}</h1>}
+              {custom && renaming === null && (
+                <Pop trigger={t => <button className="icon" onClick={t} title="Profile options" aria-label="Profile options"><Icon name="more" /></button>}>
+                  {close => <div className="menu">
+                    <button onClick={() => { close(); setRenaming(scope) }}>Rename</button>
+                    <button className="danger" onClick={() => { close(); setConfirmDel(true) }}>Delete profile</button>
+                  </div>}
+                </Pop>
+              )}
+            </div>
             {confirmDel
-              ? <p>Delete {scope} and its {count(scope)} items? <button className="btn danger" onClick={() => api.delProfile(scope).then(() => { go('user'); refreshProfiles() }, () => say('Could not delete'))}>Delete profile</button> <button className="btn" onClick={() => setConfirmDel(false)}>Keep</button></p>
-              : <p>{SUB[scope] ?? 'Your own profile.'}{custom && <> <button className="btn" onClick={() => setRenaming(scope)}>Rename</button> <button className="btn" onClick={() => setConfirmDel(true)}>Delete</button></>}</p>}
+              ? <p>Delete {scope} and its {n} items? <button className="link-btn danger" onClick={() => api.delProfile(scope).then(() => { go('user'); refreshProfiles() }, () => say('Could not delete'))}>Delete</button> <button className="link-btn" onClick={() => setConfirmDel(false)}>Keep</button></p>
+              : <p>{caption}</p>}
           </div>
           <label className="search">
-            <input ref={searchRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Search everything you saved" aria-label="Search" spellCheck={false} />
+            <Icon name="search" />
+            <input ref={searchRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Search" aria-label="Search" spellCheck={false} />
             <Kbd>Cmd K</Kbd>
           </label>
           <button className={'rec' + (rec.on ? ' on' : '')} onClick={toggleRec} title={rec.on ? 'Stop recording' : 'Record your voice'}>
-            <i className="recdot" />{rec.on ? `Stop ${clock(rec.seconds)}` : 'Record'}
+            {rec.on ? <><i className="recdot" />{clock(rec.seconds)}</> : <><Icon name="voice" />Record</>}
           </button>
         </header>
 
         <div className={'composer' + (draft ? ' has' : '')}>
           <textarea ref={composerRef} rows={1} value={draft} onChange={e => { setDraft(e.target.value); grow(e.currentTarget) }}
-            placeholder="Something you might miss later. Type a thought, paste a link or a folder path."
+            placeholder="Something you might miss later..."
             onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); save() } }} />
           <div className="cbar">
-            <span className="dim">Saving to <Dot name={profiles.active} />{profiles.active}</span>
+            <span className="to"><Dot name={profiles.active} />{profiles.active}</span>
             <button className="btn primary" disabled={!draft.trim()} onClick={save}>Save <Kbd>Cmd Enter</Kbd></button>
           </div>
         </div>
 
-        <div className="filters">
+        <div className="tabs">
+          <button className={'tab' + (!kinds.length ? ' on' : '')} onClick={() => setKinds([])}>All</button>
           {KINDS.map(([k, label]) => (
-            <button key={k} className={'chip' + (kinds.includes(k) ? ' on' : '')} aria-pressed={kinds.includes(k)}
+            <button key={k} className={'tab' + (kinds.includes(k) ? ' on' : '')} aria-pressed={kinds.includes(k)}
               onClick={() => setKinds(l => (l.includes(k) ? l.filter(x => x !== k) : [...l, k]))}>{label}</button>
           ))}
           <span className="gap" />
-          <Chip label="App" value={app} clear={() => setApp('')}>
-            <select value={app} onChange={e => setApp(e.target.value)} aria-label="Filter by app">
-              <option value="">Any app</option>
-              {apps.map(a => <option key={a.app} value={a.app}>{a.app} ({a.count})</option>)}
+          <label className="sortpick">{sortLabel}<Icon name="caret" />
+            <select value={sortNow} onChange={e => setSort(e.target.value)} aria-label="Sort">
+              <option value="new">Newest first</option>
+              <option value="old">Oldest first</option>
+              <option value="relevance" disabled={!q.trim()}>Best match</option>
             </select>
-          </Chip>
-          <Chip label="From" value={since} clear={() => setSince('')}>
-            <input type="date" value={since} max={until || undefined} onChange={e => setSince(e.target.value)} onClick={e => e.currentTarget.showPicker?.()} aria-label="From date" />
-          </Chip>
-          <Chip label="Until" value={until} clear={() => setUntil('')}>
-            <input type="date" value={until} min={since || undefined} onChange={e => setUntil(e.target.value)} onClick={e => e.currentTarget.showPicker?.()} aria-label="Until date" />
-          </Chip>
-          <select className="sort" value={sortNow} onChange={e => setSort(e.target.value)} aria-label="Sort">
-            <option value="new">Newest first</option>
-            <option value="old">Oldest first</option>
-            <option value="relevance" disabled={!q.trim()}>Best match</option>
-          </select>
-          {filtered && <button className="chip clear" onClick={clearFilters}>Clear all</button>}
+          </label>
+          <Pop trigger={t => <button className={'tab filter' + (nFilters ? ' on' : '')} onClick={t}><Icon name="filter" />Filter{nFilters ? ` ${nFilters}` : ''}</button>}>
+            {() => <div className="fields">
+              <label>App
+                <select value={app} onChange={e => setApp(e.target.value)} aria-label="Filter by app">
+                  <option value="">Any app</option>
+                  {apps.map(a => <option key={a.app} value={a.app}>{a.app} ({a.count})</option>)}
+                </select>
+              </label>
+              <label>From<input type="date" value={since} max={until || undefined} onChange={e => setSince(e.target.value)} /></label>
+              <label>Until<input type="date" value={until} min={since || undefined} onChange={e => setUntil(e.target.value)} /></label>
+              {projects.length > 0 && <label>Project
+                <select value={project} onChange={e => setProject(e.target.value)} aria-label="Filter by project">
+                  <option value="">Any project</option>
+                  {projects.map(p => <option key={p} value={p}>{projectName(p)}</option>)}
+                </select>
+              </label>}
+            </div>}
+          </Pop>
         </div>
+        {nFilters > 0 && (
+          <div className="active">
+            {app && <button className="tag" onClick={() => setApp('')}>{app}<Icon name="x" /></button>}
+            {project && <button className="tag" onClick={() => setProject('')}>{projectName(project)}<Icon name="x" /></button>}
+            {since && <button className="tag" onClick={() => setSince('')}>From {day(since)}<Icon name="x" /></button>}
+            {until && <button className="tag" onClick={() => setUntil('')}>Until {day(until)}<Icon name="x" /></button>}
+            <button className="link-btn" onClick={clearFilters}>Clear all</button>
+          </div>
+        )}
 
         <div className="scroll">
-          {items.length > 0 && (
+          {list.length > 0 && (
             <ul className={'list' + (grid ? ' grid' : '')}>
-              {items.map((it, i) => (
+              {list.map((it, i) => (
                 <Row key={it.id} it={it} q={q} sel={i === sel} all={scope === '*'} profiles={names} act={act} onSelect={() => setSel(i)} />
               ))}
             </ul>
           )}
-          {loaded && !items.length && (
+          {loaded && !list.length && (
             <div className="empty">
+              <img src={icon} alt="" />
               <h2>{filtered ? 'Nothing matches' : 'Nothing here yet'}</h2>
               <p>{filtered ? 'Try fewer words or remove a filter.' : EMPTY[scope] ?? 'Write something in the box above, or press Ctrl+Shift+Space anywhere.'}</p>
-              {filtered && <button className="btn" onClick={clearFilters}>Clear all</button>}
-              {filtered && scope !== '*' && <button className="btn" onClick={() => go('*')}>Search all profiles</button>}
+              <div>
+                {filtered && scope !== '*' && <button className="btn" onClick={() => go('*')}>Search all profiles</button>}
+                {filtered && <button className="btn" onClick={clearFilters}>Clear all</button>}
+              </div>
             </div>
           )}
           {more && <div ref={sentinel} className="more-sentinel">Loading more</div>}

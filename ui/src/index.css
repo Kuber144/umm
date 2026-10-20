@@ -1,39 +1,44 @@
+/* Colours come from assets/icon.svg: teal tile, cream body, ink outline, blush cheeks, drop blue. */
 :root {
   color-scheme: light dark;
-  --bg: #f7f8f9; --side: #eceef0; --surface: #fff; --field: #eef0f2;
-  --ink: #1a1d22; --ink-2: #565d68; --ink-3: #8a919c;
-  --line: rgba(24, 32, 44, .1); --line-strong: rgba(24, 32, 44, .18);
-  --accent: #0c7a69; --on-accent: #fff; --agent: #c4741a; --danger: #c8382e;
-  --sel: color-mix(in srgb, var(--accent) 9%, transparent);
-  --mark: #ffe58a;
-  --font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --paper: #fbf6e8; --paper-2: #f3ebd5; --paper-3: #e9dec1; --card: #fffcf3;
+  --ink: #1f2a2e; --ink-2: #4e5d5f; --ink-3: #7d8984;
+  --line: rgba(31, 42, 46, .1); --line-2: rgba(31, 42, 46, .2);
+  --teal: #5fb3a5; --teal-ink: #2a7a6d; --teal-tint: rgba(95, 179, 165, .2);
+  --blush: #f29a8a; --blush-ink: #c45f4d; --drop: #9ad8f0;
+  --on-teal: #1f2a2e;
+  --mark: rgba(154, 216, 240, .6);
+  --lift: 0 1px 0 rgba(31, 42, 46, .05), 0 10px 24px -14px rgba(31, 42, 46, .35);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --round: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17191c; --side: #1e2125; --surface: #1f2226; --field: #262a2f;
-    --ink: #e9ebee; --ink-2: #a5abb4; --ink-3: #747b86;
-    --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .16);
-    --accent: #43c4a8; --on-accent: #08241d; --agent: #e9a24d; --danger: #f06b60;
-    --sel: color-mix(in srgb, var(--accent) 12%, transparent);
-    --mark: #5d4d0f;
+    --paper: #151f22; --paper-2: #0f1719; --paper-3: #223034; --card: #1b2a2d;
+    --ink: #f6eed9; --ink-2: #b4bcb0; --ink-3: #7b8985;
+    --line: rgba(255, 246, 224, .09); --line-2: rgba(255, 246, 224, .18);
+    --teal-ink: #78c8ba; --teal-tint: rgba(95, 179, 165, .2);
+    --blush-ink: #f5a99b;
+    --mark: rgba(154, 216, 240, .3);
+    --lift: 0 1px 0 rgba(0, 0, 0, .3), 0 12px 28px -14px rgba(0, 0, 0, .7);
   }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.45 var(--font); letter-spacing: -.005em; -webkit-font-smoothing: antialiased; }
 html[data-view=hotbar], html[data-view=hotbar] body { background: transparent; }
 body { overflow: hidden; }
-button, input, select, textarea { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; letter-spacing: inherit; color: inherit; }
 button { cursor: pointer; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 input:focus-visible, textarea:focus-visible { outline: none; }
-mark { background: var(--mark); color: inherit; border-radius: 2px; }
+::selection { background: var(--teal-tint); }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
 .dim { color: var(--ink-3); }
 .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.dot { vertical-align: middle; width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; margin-right: 6px; }
-kbd { font: 500 11px/1 var(--font); color: var(--ink-3); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; margin-left: 4px; white-space: nowrap; }
-.recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); display: inline-block; flex: none; }
-@keyframes pulse { 50% { opacity: .25; } }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; vertical-align: middle; margin-right: 8px; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .22); }
+kbd { font: 500 11px/1 var(--font); color: var(--ink-3); background: var(--paper-2); border-radius: 4px; padding: 3px 5px; margin-left: 4px; white-space: nowrap; }
+.recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--blush); display: inline-block; flex: none; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .4); }
+@keyframes pulse { 50% { opacity: .3; } }
 .on .recdot { animation: pulse 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
