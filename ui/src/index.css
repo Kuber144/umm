@@ -53,6 +53,8 @@ kbd { font: 500 11px/16px var(--font); color: var(--ink-3); border-radius: 4px; 
 .recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--blush); display: inline-block; flex: none; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .4); }
 @keyframes pulse { 50% { opacity: .3; } }
 .on .recdot { animation: pulse 1.2s ease-in-out infinite; }
+.busy { color: var(--ink-3); font-weight: 400; }
+.busy::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: var(--teal); animation: pulse 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .fav { flex: none; width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }
 /* app icons are drawn with their own margin, so they sit a little larger than line icons */

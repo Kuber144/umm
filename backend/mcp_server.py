@@ -147,6 +147,7 @@ def search_memory(
     Long content is cut to 500 characters and marked `truncated: true`; call get_memory(id) for the rest.
     A truncated keyword hit also has `snippet`, the text around the match.
     `file` is an absolute path to the screenshot image or voice recording, or null.
+    A voice item with `meta.transcribing` true has empty content until Whisper finishes, call get_memory(id) later.
     `meta` is null for the user's own saves. For agent saves it is {agent, agent_version, cwd, session}."""
     rows = db.search(query, profile.strip() or "*", ",".join(kind or []), limit, offset, app, since, until, sort,
                      agent, project or (CWD if here else ""))

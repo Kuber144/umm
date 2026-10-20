@@ -221,10 +221,10 @@ export default function Library() {
     return () => clearInterval(t)
   }, [failed, scope]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // recording: poll only while it matters, and pick up the voice item when transcribing ends
+  // recording: poll only while it matters, and reload when a voice item appears or its transcript lands
   const wasBusy = useRef(0)
   useEffect(() => {
-    if (wasBusy.current && !rec.transcribing) { refresh(Math.max(items.length, PAGE)); refreshProfiles() }
+    if (wasBusy.current !== rec.transcribing) { refresh(Math.max(items.length, PAGE)); refreshProfiles() }
     wasBusy.current = rec.transcribing
     if (!rec.on && !rec.transcribing) return
     const t = setInterval(() => api.record().then(setRec, () => {}), 1000)

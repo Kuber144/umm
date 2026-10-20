@@ -93,6 +93,7 @@ function lines(it: Item, q: string): [ReactNode, ReactNode] {
   }
   const [head, ...rest] = it.content.trim().split('\n')
   if (it.kind === 'voice') {
+    if (m?.transcribing) return [<span className="busy">Transcribing...</span>, <><Icon name="voice" />Voice note</>]
     const [orig, english] = voiceParts(it.content)
     return [said(orig), <><Icon name="voice" />{english ? near(english) : 'Voice note'}</>]
   }
@@ -162,7 +163,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     shot && it.file && ['reveal', 'Open in Preview', 'Cmd O', () => act.shot(it, 'open')],
     lp && ['reveal', 'Open link', 'Cmd O', () => send({ type: 'openExternal', url: lp.url })],
     (it.file && shot || it.kind === 'path') && ['path', 'Show in Finder', 'Cmd Shift R', () => (shot ? act.shot(it, 'reveal') : act.reveal(it))],
-    !shot && ['edit', 'Edit', 'Cmd E', () => setEditing(true)],
+    !shot && !m?.transcribing && ['edit', 'Edit', 'Cmd E', () => setEditing(true)],
   ] as Maybe<Tool>[]).filter(Boolean) as Tool[]
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -205,7 +206,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     <div className="file"><span className="kind"><Icon name="path" /></span><div><h2>{hl(it.content.slice(slash + 1) || it.content, q)}</h2><code>{hl(home(it.content.slice(0, slash + 1)), q)}</code></div></div>
   ) : it.kind === 'voice' ? <>
     {it.file && <Player file={it.file} />}
-    <p className="prose">{hl(said, q)}</p>
+    {m?.transcribing ? <p className="busy">Transcribing...</p> : <p className="prose">{hl(said, q)}</p>}
     {english && <div className="trans"><h3>English translation</h3><p>{hl(english, q)}</p></div>}
   </> : <p className="prose">{hl(it.content, q)}</p>
 

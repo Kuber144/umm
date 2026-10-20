@@ -199,7 +199,8 @@ def update(id, content=None, profile=None):
     if content is not None:  # a new text drops what was fetched for the old link
         db.execute("UPDATE items SET content = ?, kind = ?, vec = NULL, meta = json_remove(meta, '$.link', '$.icon', '$.tried') "
                    "WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')", (content, detect(content), id))
-        db.execute("UPDATE items SET content = ?, vec = NULL WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
+        db.execute("UPDATE items SET content = ?, vec = NULL, meta = json_remove(meta, '$.transcribing') "
+                   "WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
     if profile:
         db.execute("UPDATE items SET profile = ? WHERE rowid = ?", (profile, id))
     commit()
@@ -216,7 +217,7 @@ def embed_pending():
     with embedding:
         while True:
             with lock:
-                rows = db.execute("SELECT rowid, content FROM items WHERE vec IS NULL LIMIT 4").fetchall()
+                rows = db.execute("SELECT rowid, content FROM items WHERE vec IS NULL AND content != '' LIMIT 4").fetchall()  # a voice note being transcribed waits
             vecs = rows and embed.embed([c for _, c in rows])  # outside the lock, the model is slow
             if not vecs:  # nothing left, or no model and the items stay keyword only
                 return
@@ -299,6 +300,12 @@ def snippets(q, ids):
 @locked
 def has_file(name):
     return db.execute("SELECT 1 FROM items WHERE file = ?", (name,)).fetchone() is not None
+
+
+@locked
+def transcribing():
+    """(id, file) of voice items whose transcription has not finished."""
+    return db.execute("SELECT rowid, file FROM items WHERE json_extract(meta, '$.transcribing')").fetchall()
 
 
 @locked

@@ -169,7 +169,7 @@ export default function Hotbar() {
                 return (
                   <li key={m.id} id={'h' + i} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
                     <span className="tile">{m.meta?.icon ? <img className="fav" src={fileUrl(m.meta.icon)} alt="" /> : m.app ? <AppIcon name={appName(m.app)} /> : <Icon name={m.kind} />}</span>
-                    <span className="label">{hl(chars(linkLabel(m) || m.content.slice(0, 400).replace(/\s+/g, ' '), 120), q)}</span>
+                    <span className="label">{m.meta?.transcribing ? <span className="busy">Transcribing...</span> : hl(chars(linkLabel(m) || m.content.slice(0, 400).replace(/\s+/g, ' '), 120), q)}</span>
                     {m.profile !== active && <span className="peek"><Dot name={m.profile} />{m.profile}</span>}
                     <span className="peek">{ago(m.created_at)}</span>
                   </li>

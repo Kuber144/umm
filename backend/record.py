@@ -51,10 +51,23 @@ def stop():
         state["stream"].close()
         state["queue"].put(None)
         state["writer"].join()
-        args = (state["name"], state["app"], state["profile"], state["meta"])
-        state.update(stream=None)
-        state["transcribing"] += 1
+        try:  # on stays true until the item exists, so a poll that sees it off finds the item
+            args = save(state["name"], state["app"], state["profile"], state["meta"])
+            state["transcribing"] += 1
+        finally:
+            state.update(stream=None)
     threading.Thread(target=transcribe, args=args, daemon=True).start()
+
+
+def save(name, app, profile, meta=None):
+    """Adds the voice item at once, playable, with empty content and meta.transcribing. Returns (id, file)."""
+    # WebKit can't play FLAC, AAC plays everywhere and is ~3x smaller. Whisper reads the m4a, so the file name never changes
+    m4a = name.replace(".flac", ".m4a")
+    ok = subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "32000", str(db.FILES / name), str(db.FILES / m4a)]).returncode == 0
+    id = db.add("", "voice", m4a if ok else name, app, profile, {**(meta or {}), "transcribing": True})
+    if ok:
+        (db.FILES / name).unlink()
+    return id, m4a if ok else name
 
 
 def whisper(path):
@@ -72,28 +85,23 @@ def whisper(path):
     return text + "\n\nEnglish: " + " ".join(s.text.strip() for s in segments)
 
 
-def transcribe(name, app, profile, meta=None):
+def transcribe(id, name):
     try:
         # a child process gives the model's ~500 MB back to the OS on exit, gc alone does not
         p = subprocess.run([sys.executable, __file__, str(db.FILES / name)], capture_output=True, text=True)
-        text = p.stdout.strip() or "(no speech)" if p.returncode == 0 else "(transcription failed)"
-        # WebKit can't play FLAC, AAC plays everywhere and is ~3x smaller
-        m4a = name.replace(".flac", ".m4a")
-        if subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "32000", str(db.FILES / name), str(db.FILES / m4a)]).returncode == 0:
-            (db.FILES / name).unlink()
-            name = m4a
-        db.add(text, "voice", name, app, profile, meta)
+        db.update(id, p.stdout.strip() or "(no speech)" if p.returncode == 0 else "(transcription failed)")  # clears meta.transcribing
     finally:
         with lock:
             state["transcribing"] -= 1
 
 
 def recover():
-    """Transcribe recordings left by a quit or crash: .flac files without an item, one at a time."""
-    todo = [f.name for f in sorted(db.FILES.glob("*.flac")) if not db.has_file(f.name)]
+    """Recordings a quit or crash left behind: a .flac without an item, or an item still marked transcribing. One at a time."""
+    flacs = [f.name for f in sorted(db.FILES.glob("*.flac")) if not db.has_file(f.name)]
+    todo = db.transcribing()  # before a new recording can add one
     with lock:
-        state["transcribing"] += len(todo)
-    threading.Thread(target=lambda: [transcribe(n, None, db.active_profile()) for n in todo], daemon=True).start()
+        state["transcribing"] += len(flacs) + len(todo)
+    threading.Thread(target=lambda: [transcribe(*t) for t in todo + [save(n, None, db.active_profile()) for n in flacs]], daemon=True).start()
 
 
 def status():
