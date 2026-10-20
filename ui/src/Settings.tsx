@@ -157,7 +157,7 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
         </Group>
 
         <Group title="Screenshots">
-          {s.screenshot_days !== undefined && <Row label="Keep images" hint="After that, the image is removed. Its text stays searchable.">
+          {s.screenshot_days !== undefined && <Row label="Keep images" hint="After that, umm deletes its copy of the image. The text stays searchable and imported originals stay where they are.">
             <Pick value={String(s.screenshot_days)} set={v => patch({ screenshot_days: +v })} label="Keep screenshot images" options={DAYS.map(([d, l]) => ({ value: String(d), label: l }))} />
           </Row>}
           {mac.accessibility !== undefined && <Row label="Page addresses" hint={mac.accessibility ? 'Screenshots remember the page or document they show.' : 'Allow Accessibility so screenshots remember the page URL.'}>
