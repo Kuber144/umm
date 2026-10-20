@@ -1,0 +1,13 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+header { display: flex; gap: 8px; margin-bottom: 8px; }
+header input { flex: 1; }
+input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #8884; background: transparent; color: inherit; }
+ul { list-style: none; padding: 0; }
+li { border: 1px solid #8883; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.meta { display: flex; justify-content: space-between; font-size: 12px; opacity: .6; }
+.meta button { padding: 0 6px; font-size: 12px; cursor: pointer; }
+img { max-width: 100%; border-radius: 6px; margin-top: 8px; }
+p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; }
+code { cursor: pointer; }

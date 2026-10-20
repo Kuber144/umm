@@ -1,0 +1,7 @@
+data/
+__pycache__/
+.venv/
+node_modules/
+ui/dist/
+.DS_Store
+menu/umm-menu
