@@ -1,0 +1,25 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Backend imports
+        run: cd backend && uv sync && uv run python -c "import api, mcp_server, record, db"
+      - name: UI build
+        run: cd ui && npm ci && npm run build
+      - name: Swift typecheck
+        run: swiftc -typecheck app/*.swift
+      - name: CLI
+        run: cd cli && uv run umm --help

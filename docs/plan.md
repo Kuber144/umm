@@ -5,7 +5,7 @@
 1. Hotbar. `Ctrl+Shift+Space` from any app saves a screenshot, the clipboard, a note or a voice recording. Done.
 2. Main window. Browse, search, filter, edit and manage profiles. Done.
 3. MCP. Agents search and save, and each agent can use its own profile. Done.
-4. CLI. An `umm` command, for example `umm add "..."`, `umm search tax`, `umm start`, `umm stop`. Next.
+4. CLI. An `umm` command, for example `umm add "..."`, `umm find tax`, `umm start`, `umm stop`. Done.
 
 ## Done
 
@@ -17,15 +17,12 @@
 - Main window filters for kind, app and date, sort, screenshot grid, undo on delete.
 - MCP server with `search_memory`, `remember`, `list_profiles`.
 - Start and stop scripts, app icon, menu bar icon.
+- CLI, link enrichment, open at login, and an optional local signing certificate so permissions survive rebuilds.
 
 ## Next
 
-1. CLI.
-2. Links. Pull tweet text (X oEmbed) and YouTube titles so they show up in search.
-3. Ask box in the main window that calls Claude with your API key.
-4. Embeddings for fuzzy search.
-5. Start at login.
-6. Stable code signing, so Screen Recording and Microphone permissions survive rebuilds.
+1. Ask box in the main window that calls Claude with your API key.
+2. Embeddings for fuzzy search.
 
 ## Decisions
 

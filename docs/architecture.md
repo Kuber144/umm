@@ -25,7 +25,7 @@ ui/ (React + Vite)
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
 - `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`.
-- `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild.
+- `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild. If a certificate named "umm local signing" exists in the keychain (`scripts/setup-signing.sh`), it signs with that instead and permissions survive rebuilds.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
 

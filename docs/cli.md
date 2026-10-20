@@ -5,7 +5,7 @@
 ## Install
 
 ```
-uv tool install --editable /Users/kuberjain/Developer/personal/umm/cli
+uv tool install --editable "$(pwd)/cli"      # from the repo root, `./start.sh` prints it too
 ```
 
 This puts `umm` in `~/.local/bin`. The install is editable, so changes to `cli/umm.py` apply at once. To try it without installing, run `uv run --project cli umm ...` from the repo.

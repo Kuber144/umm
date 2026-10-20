@@ -7,17 +7,18 @@
 Claude Code:
 
 ```
-claude mcp add umm -s user -- uv run --project /Users/kuberjain/Developer/personal/umm/backend /Users/kuberjain/Developer/personal/umm/backend/mcp_server.py
+# from the repo root, `./start.sh` prints it too
+claude mcp add umm -s user -- uv run --project "$(pwd)/backend" "$(pwd)/backend/mcp_server.py"
 ```
 
-Other clients (Codex, Cursor, and so on) take the same command in their MCP config:
+Other clients (Codex, Cursor, and so on) take the same command in their MCP config. Replace `<path-to-umm>` with the absolute path of your checkout:
 
 ```json
 {
   "mcpServers": {
     "umm": {
       "command": "uv",
-      "args": ["run", "--project", "/Users/kuberjain/Developer/personal/umm/backend", "/Users/kuberjain/Developer/personal/umm/backend/mcp_server.py"]
+      "args": ["run", "--project", "<path-to-umm>/backend", "<path-to-umm>/backend/mcp_server.py"]
     }
   }
 }

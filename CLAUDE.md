@@ -19,9 +19,8 @@ No TCP ports. The backend listens on a Unix socket and the app owns its lifetime
 - All SQL lives in `backend/db.py`. The API and MCP server call it and never touch SQLite directly.
 - One table, `items`, an FTS5 virtual table. `rowid` is the id. Add a column before adding a table.
 - Nothing app specific. No per-app scripts or app name lists. It has to work the same for anyone in any app.
-- Watch memory and disk. Screenshots are JPG and recordings are 16 kHz mono FLAC. Whisper runs in a child process that exits when done. Wrap PyObjC calls in API threads with `objc.autorelease_pool()`. Deleting an item deletes its file.
+- Watch memory and disk. Screenshots are JPG and recordings are 16 kHz mono AAC `.m4a`. Whisper runs in a child process that exits when done. Wrap PyObjC calls in API threads with `objc.autorelease_pool()`. Deleting an item deletes its file.
 - No emojis anywhere.
-- Run any doc, README or commit message through the `unslop` skill.
 
 ## Run and test
 
@@ -37,4 +36,4 @@ cd ui && npm run lint
 - `UMM_SWIFT_FLAGS="-D TEST" app/build.sh` adds test hooks. `SIGUSR1` toggles the hotbar and `UMM_JS` runs JavaScript in the hotbar page.
 - Check the backend with `curl --unix-socket data/umm.sock http://umm/api/profiles`.
 - Logs are in `data/umm.log`.
-- Rebuilds are signed ad hoc, so macOS may ask for Screen Recording and Microphone again.
+- Rebuilds are signed ad hoc, so macOS may ask for Screen Recording and Microphone again. `scripts/setup-signing.sh` creates a local certificate that keeps them.

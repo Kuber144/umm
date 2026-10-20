@@ -6,3 +6,6 @@ ui/dist/
 .DS_Store
 build/
 .claude/worktrees/
+*.p12
+*.pem
+.claude/skills/
