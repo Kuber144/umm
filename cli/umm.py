@@ -1,4 +1,4 @@
-"""umm command line. Talks to the umm app over data/umm.sock using only the standard library, so it starts fast."""
+"""umm command line. Talks to the umm app over ~/Library/Application Support/umm/umm.sock using only the standard library, so it starts fast."""
 import argparse
 import json
 import os
@@ -10,7 +10,9 @@ from pathlib import Path
 VERSION = "0.1.0"
 KINDS = ["screenshot", "text", "path", "link", "voice"]
 ROOT = Path(os.environ.get("UMM_ROOT") or Path(__file__).resolve().parent.parent)
-DATA = ROOT / "data"
+BASE = Path.home() / "Library" / "Application Support" / "umm"  # socket, log and the location pointer, same as backend/db.py
+DATA = Path(os.environ.get("UMM_DATA") or ((BASE / "location").read_text().strip() if (BASE / "location").exists() else BASE))
+LOG = BASE / "umm.log"
 COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
 KIND_COLOR = {"screenshot": "36", "text": "0", "path": "32", "link": "34", "voice": "35"}
 
@@ -42,7 +44,7 @@ def api(method, path, body=None, params=None):
         def connect(self):
             self.sock = socket.socket(socket.AF_UNIX)
             self.sock.settimeout(60)
-            self.sock.connect(str(DATA / "umm.sock"))
+            self.sock.connect(str(BASE / "umm.sock"))
 
     if params:
         path += "?" + urlencode({k: v for k, v in params.items() if v not in (None, "")})
@@ -52,7 +54,7 @@ def api(method, path, body=None, params=None):
         r = conn.getresponse()
         data = r.read()
     except TimeoutError:
-        raise Fail("the backend did not answer in time, see data/umm.log")
+        raise Fail(f"the backend did not answer in time, see {LOG}")
     except OSError:
         if not (ROOT / "start.sh").exists():
             raise Fail(f"umm repo not found at {ROOT}, set UMM_ROOT")
@@ -65,7 +67,7 @@ def api(method, path, body=None, params=None):
         d = parsed.get("detail") if isinstance(parsed, dict) else None
         if isinstance(d, list):
             d = "invalid input: " + str(d[0].get("msg", d[0]))
-        raise Fail(d or f"backend error (HTTP {r.status}), see data/umm.log")
+        raise Fail(d or f"backend error (HTTP {r.status}), see {LOG}")
     return parsed
 
 
@@ -413,11 +415,11 @@ def cmd_status(a):
     total = sum(x["count"] for x in p["all"]) if p else None
     counts = ", ".join(x["name"] + " " + str(x["count"]) for x in p["all"]) if p else ""
     if a.json:
-        dump({"app_running": bool(pids), "pid": int(pids[0]) if pids else None, "backend": bool(p), "socket": str(DATA / "umm.sock"),
-              "active_profile": p and p["active"], "items": total, "profiles": p and p["all"], "recording": rec, "data_bytes": size})
+        dump({"app_running": bool(pids), "pid": int(pids[0]) if pids else None, "backend": bool(p), "socket": str(BASE / "umm.sock"),
+              "data": str(DATA), "active_profile": p and p["active"], "items": total, "profiles": p and p["all"], "recording": rec, "data_bytes": size})
     else:
         rows = [("app", f"running (pid {pids[0]})" if pids else "not running"),
-                ("backend", f"ok ({DATA / 'umm.sock'})" if p else "not reachable"),
+                ("backend", f"ok ({BASE / 'umm.sock'})" if p else "not reachable"),
                 ("profile", p["active"] if p else "-"),
                 ("items", f"{total} ({counts})" if p else "-"),
                 ("recording", recline(rec) if rec else "-"),
@@ -450,7 +452,7 @@ def cmd_start(a):
             return print("umm started")
         except Fail:
             time.sleep(0.25)
-    raise Fail("the app started but the backend did not answer, see data/umm.log")
+    raise Fail(f"the app started but the backend did not answer, see {LOG}")
 
 
 def cmd_stop(a):
@@ -512,11 +514,11 @@ class RAW(argparse.RawDescriptionHelpFormatter):
 
 def parser():
     p = argparse.ArgumentParser("umm", formatter_class=RAW, description=(
-        "Personal memory for macOS. Talks to the umm app over data/umm.sock.\n\n"
+        "Personal memory for macOS. Talks to the umm app over ~/Library/Application Support/umm/umm.sock.\n\n"
         "examples:\n  umm add \"remember to call mum\"       save a note\n  pbpaste | umm add                    save the clipboard\n"
         "  umm shot                             screenshot and OCR\n  umm find invoice --since 1w          search the last week\n"
         "  umm ls --all -k link                 recent links in every profile\n  umm show 42 / umm copy 42 / umm open 42"),
-        epilog="environment: UMM_ROOT (repo location), NO_COLOR, EDITOR\ncompletions: eval \"$(umm completion zsh)\"  (see docs/cli.md)")
+        epilog="environment: UMM_ROOT (repo location), UMM_DATA (data folder), NO_COLOR, EDITOR\ncompletions: eval \"$(umm completion zsh)\"  (see docs/cli.md)")
     p.add_argument("-V", "--version", action="version", version=f"umm {VERSION}")
     sub = p.add_subparsers(metavar="<command>", title="commands")
 
