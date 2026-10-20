@@ -23,7 +23,6 @@ const call = <T = object>(path: string, method = 'GET', body?: object): Promise<
 const qs = (p: Params) => new URLSearchParams(Object.entries(p).filter(([, v]) => v !== undefined && v !== '') as [string, string][]).toString()
 
 export const fileUrl = (name: string) => '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
-export const thumbUrl = (name: string) => '/api/thumb/' + encodeURIComponent(name)
 
 export const api = {
   items: (p: Params) => call<Item[]>('items?' + qs(p)),

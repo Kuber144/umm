@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
-import { fileUrl, thumbUrl, type Item, type LinkInfo } from './api'
+import { fileUrl, type Item, type LinkInfo } from './api'
 import { send } from './bridge'
-import { AppIcon, Dot, Icon, SOURCES, clock, full, hl, home, stamp, type IconName } from './ui'
+import { AppIcon, Dot, Icon, Kbd, Menu, SOURCES, type Opt, clock, full, hl, home, stamp, type IconName } from './ui'
 
 export type Act = {
   copy: (it: Item) => void
@@ -58,15 +58,16 @@ function linkParts(it: Item) {
 // Voice transcripts in another language carry an English version after "English:".
 const voiceParts = (text: string) => text.split(/\n+English: /)
 
-// The leading glyph: a link's site icon, the app's icon, an agent monogram, else the kind.
+// The leading glyph: a link's site icon, the app's icon or an agent monogram, with a small kind badge. Else the kind alone.
 export function Glyph({ it }: { it: Item }) {
   const from = appName(it.app)
-  return it.meta?.icon ? <img className="fav" src={fileUrl(it.meta.icon)} alt="" />
-    : from ? <AppIcon name={from} /> : <span className="kind"><Icon name={it.kind} /></span>
+  const face = it.meta?.icon ? <img className="fav" src={fileUrl(it.meta.icon)} alt="" /> : from ? <AppIcon name={from} /> : null
+  return face ? <span className="glyph">{face}{it.kind !== 'text' && <i className="badge"><Icon name={it.kind} /></i>}</span>
+    : <span className="kind"><Icon name={it.kind} /></span>
 }
 
 const QuietUrl = ({ url, q = '' }: { url: string; q?: string }) =>
-  <a className="qurl" href={url} title={url} onClick={openUrl(url)}>{hl(host(url), q)}</a>
+  <a className="qurl" href={url} data-tip={url} onClick={openUrl(url)}>{hl(host(url), q)}</a>
 
 // Title and second line of a row.
 function lines(it: Item, q: string): [ReactNode, ReactNode] {
@@ -109,8 +110,8 @@ export const Row = memo(function Row({ it, i, q, on, cur, all, onPick, onOpen }:
   return (
     <li ref={el} id={'m' + it.id} role="option" aria-selected={on} className={'row ' + it.kind + (on ? ' on' : '') + (cur ? ' cur' : '')}
       onMouseDown={e => e.shiftKey && e.preventDefault()} onClick={e => onPick(i, e)} onDoubleClick={() => onOpen(it)}>
-      <span className="lead">{it.kind === 'screenshot' && it.file ? <img className="mini" loading="lazy" src={thumbUrl(it.file)} alt="" /> : <Glyph it={it} />}</span>
-      <span className="l1"><b>{title}</b>{all && <Dot name={it.profile} />}<time title={full(it.created_at)}>{stamp(it.created_at)}</time></span>
+      <span className="lead"><Glyph it={it} /></span>
+      <span className="l1"><b>{title}</b>{all && <Dot name={it.profile} />}<time data-tip={full(it.created_at)}>{stamp(it.created_at)}</time></span>
       <span className="l2">{sub}</span>
     </li>
   )
@@ -129,7 +130,7 @@ function Player({ file }: { file: string }) {
     : fetch(fileUrl(file)).then(r => r.blob()).then(b => { setSrc(URL.createObjectURL(b)); setFailed(false) }, () => setFailed(true))
   return (
     <div className="player">
-      <button className="pp" onClick={toggle} aria-label={on ? 'Pause' : 'Play recording'} title={failed ? 'Could not load, click to retry' : undefined}><Icon name={on ? 'pause' : 'play'} /></button>
+      <button className="pp" onClick={toggle} aria-label={on ? 'Pause' : 'Play recording'} data-tip={failed ? 'Could not load, click to retry' : undefined}><Icon name={on ? 'pause' : 'play'} /></button>
       <input type="range" min={0} max={d || 1} step={0.05} value={t} disabled={!d} aria-label="Position"
         onChange={e => { a.current!.currentTime = +e.target.value; setT(+e.target.value) }} style={{ '--p': `${d ? (t / d) * 100 : 0}%` } as React.CSSProperties} />
       <span className="clock">{d ? `${clock(Math.floor(t))} / ${clock(Math.round(d))}` : failed ? 'Could not load' : 'Play'}</span>
@@ -139,18 +140,40 @@ function Player({ file }: { file: string }) {
   )
 }
 
-// The right pane: the whole item, its details and actions.
-export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Act; profiles: string[] }) {
+// The right pane: the whole item, its details and actions. Every action has keys, shown in its tooltip.
+type Tool = [IconName, string, string, () => void]
+type Maybe<T> = T | false | '' | null | undefined
+export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Act; profiles: Opt[] }) {
   const [editing, setEditing] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
   const m = it.meta
   const from = appName(it.app)
+  const mcp = m?.source === 'mcp'
+  const shot = it.kind === 'screenshot'
   const src = m?.source && SOURCES[m.source]
   const done = () => (ta.current!.value.trim() !== it.content ? act.save(it, ta.current!.value) : Promise.resolve()).then(() => setEditing(false), () => {})
-  const tool = (icon: IconName, label: string, fn: () => void) =>
-    <button className="tool" title={label} aria-label={label} onClick={fn}><Icon name={icon} /></button>
   const lp = it.kind === 'link' ? linkParts(it) : null
   const [said, english] = voiceParts(it.content)
+  const slash = it.content.replace(/\/$/, '').lastIndexOf('/')
+
+  const tools = ([
+    shot ? ['copy', 'Copy image', 'Cmd C', () => act.shot(it, 'copy')] : ['copy', lp ? 'Copy link' : it.kind === 'path' ? 'Copy path' : 'Copy text', 'Cmd C', () => act.copy(it)],
+    shot && it.content.trim() && ['ctext', 'Copy text', 'Cmd Shift C', () => act.copy(it)],
+    shot && it.file && ['reveal', 'Open in Preview', 'Cmd O', () => act.shot(it, 'open')],
+    lp && ['reveal', 'Open link', 'Cmd O', () => send({ type: 'openExternal', url: lp.url })],
+    (it.file && shot || it.kind === 'path') && ['path', 'Show in Finder', 'Cmd Shift R', () => (shot ? act.shot(it, 'reveal') : act.reveal(it))],
+    !shot && ['edit', 'Edit', 'Cmd E', () => setEditing(true)],
+  ] as Maybe<Tool>[]).filter(Boolean) as Tool[]
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.altKey || e.ctrlKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return
+      if (e.key.toLowerCase() === 'c' && !getSelection()?.isCollapsed) return  // copying selected text
+      const t = tools.find(x => x[2] === ['Cmd', e.shiftKey && 'Shift', e.key.toUpperCase()].filter(Boolean).join(' '))
+      if (t) { e.preventDefault(); t[3]() }
+    }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  })
 
   const body = editing ? (
     <div className="edit">
@@ -160,60 +183,48 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
           if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
           if (e.key === 'Enter' && e.metaKey) done()
         }} />
-      <div className="btns"><button className="btn primary" onClick={done}>Save</button><button className="btn" onClick={() => setEditing(false)}>Cancel</button></div>
+      <div className="btns"><button className="btn" onClick={() => setEditing(false)}>Cancel</button><button className="btn primary" onClick={done}>Save <Kbd>Cmd Enter</Kbd></button></div>
     </div>
-  ) : it.kind === 'screenshot' ? <>
-    <button className="big" onClick={() => act.zoom(it)} aria-label="Zoom screenshot"><img src={fileUrl(it.file!)} alt="" /></button>
+  ) : shot ? <>
+    {it.file
+      ? <button className="hero" onClick={() => act.zoom(it)} data-tip="Zoom" data-keys="Space" aria-label="Zoom screenshot"><img src={fileUrl(it.file)} alt="" /></button>
+      : <p className="gone"><Icon name="screenshot" />The image was removed after the time set in Settings. Its text is kept.</p>}
     <h2>{hl(winTitle(it.app) || from || 'Screenshot', q)}</h2>
-    {it.content.trim() ? <pre className="full ocr">{hl(it.content, q)}</pre> : <p className="dim">No text found in this screenshot.</p>}
+    {it.content.trim()
+      ? <details className="ocr" open={!!q.trim()}><summary><Icon name="chevron" />Text in image</summary><p>{hl(it.content, q)}</p></details>
+      : <p className="dim">No text found in the image.</p>}
   </> : lp ? <>
-    <a className="card" href={lp.url} onClick={openUrl(lp.url)}>
-      <span className="site">{m?.icon ? <img className="fav" src={fileUrl(m.icon)} alt="" /> : <Icon name="link" />}{hl(lp.l?.site ?? host(lp.url), q)}{lp.l?.author && <span className="by">{hl(lp.l.author, q)}</span>}</span>
+    {lp.note && <p className="prose">{hl(lp.note, q)}</p>}
+    <a className="card" href={lp.url} onClick={openUrl(lp.url)} data-tip="Open link" data-keys="Cmd O">
+      <span className="site"><span className="kind">{m?.icon ? <img className="fav" src={fileUrl(m.icon)} alt="" /> : <Icon name="link" />}</span>{hl(lp.l?.site ?? host(lp.url), q)}{lp.l?.author && <span className="by">{hl(lp.l.author, q)}</span>}</span>
       {lp.l?.title && <b>{hl(lp.l.title, q)}</b>}
       {lp.l?.text && <span className="desc">{hl(lp.l.text, q)}</span>}
       <span className="url">{lp.url}</span>
     </a>
-    {lp.note && <p className="full">{hl(lp.note, q)}</p>}
-  </> : it.kind === 'path' ? <code className="pathbox">{hl(it.content, q)}</code>
-    : it.kind === 'voice' ? <>
-      {it.file && <Player file={it.file} />}
-      <p className="full">{hl(said, q)}</p>
-      {english && <p className="full trans"><span>English</span>{hl(english, q)}</p>}
-    </> : <p className="full">{hl(it.content, q)}</p>
+  </> : it.kind === 'path' ? (
+    <div className="file"><span className="kind"><Icon name="path" /></span><div><h2>{hl(it.content.slice(slash + 1) || it.content, q)}</h2><code>{hl(home(it.content.slice(0, slash + 1)), q)}</code></div></div>
+  ) : it.kind === 'voice' ? <>
+    {it.file && <Player file={it.file} />}
+    <p className="prose">{hl(said, q)}</p>
+    {english && <div className="trans"><h3>English translation</h3><p>{hl(english, q)}</p></div>}
+  </> : <p className="prose">{hl(it.content, q)}</p>
 
-  const facts: [string, ReactNode][] = [
-    ['Saved', full(it.created_at)],
-    ...(from && m?.source !== 'mcp' ? [['From', <><AppIcon name={from} />{it.app}</>] as [string, ReactNode]] : []),
-    ...(m?.url ? [['Page', <QuietUrl url={m.url} />] as [string, ReactNode]] : []),
-    ...(m?.source === 'mcp' ? [['Agent', `${m.agent ?? 'Agent'} ${m.agent_version ?? ''}`] as [string, ReactNode]] : src ? [['Saved with', src[1]] as [string, ReactNode]] : []),
-    ...(m?.cwd ? [['Folder', <span title={m.cwd}>{home(m.cwd)}</span>] as [string, ReactNode]] : []),
+  const facts = ([
+    mcp ? ['Agent', <><AppIcon name={m.agent ?? 'Agent'} />{m.agent ?? 'Agent'}<span className="dim">{m.agent_version}</span></>]
+      : from && ['App', <><AppIcon name={from} />{from}{!shot && <span className="dim">{winTitle(it.app)}</span>}</>],
+    m?.url && ['Page', <QuietUrl url={m.url} />],
+    m?.cwd && [mcp ? 'Project' : 'Folder', <span data-tip={m.cwd}>{home(m.cwd)}</span>],
+    !mcp && src && ['Saved with', src[1]],
     ['Profile', <><Dot name={it.profile} />{it.profile}</>],
-  ]
+    ['Saved', full(it.created_at)],
+  ] as Maybe<[string, ReactNode]>[]).filter(Boolean) as [string, ReactNode][]
   return (
     <section className="pane" aria-label="Preview">
       <header className="phead">
-        {it.kind === 'screenshot' ? <>
-          <button className="btn" onClick={() => act.shot(it, 'copy')}><Icon name="copy" />Copy image</button>
-          {tool('reveal', 'Open in Preview', () => act.shot(it, 'open'))}
-          {tool('path', 'Show in Finder', () => act.shot(it, 'reveal'))}
-          {it.content.trim() && tool('text', 'Copy text', () => act.copy(it))}
-        </> : lp ? <>
-          <button className="btn" onClick={() => send({ type: 'openExternal', url: lp.url })}><Icon name="reveal" />Open link</button>
-          {tool('copy', 'Copy link', () => act.copy(it))}
-        </> : <>
-          <button className="btn" onClick={() => act.copy(it)}><Icon name="copy" />Copy</button>
-          {it.kind === 'path' && tool('path', 'Show in Finder', () => act.reveal(it))}
-        </>}
-        {it.kind !== 'screenshot' && tool('edit', 'Edit', () => setEditing(true))}
+        {tools.map(([ic, label, keys, fn]) => <button key={label} className="tool" data-tip={label} data-keys={keys} aria-label={label} onClick={fn}><Icon name={ic} /></button>)}
         <span className="gap" />
-        <label className="tool" title="Move to profile">
-          <Icon name="move" />
-          <select value="" onChange={e => e.target.value && act.move([it], e.target.value)} aria-label="Move to profile">
-            <option value="">Move to...</option>
-            {profiles.filter(p => p !== it.profile).map(p => <option key={p}>{p}</option>)}
-          </select>
-        </label>
-        {tool('trash', 'Delete', () => act.del([it]))}
+        <Menu className="tool" label="Move to profile" tip="Move to profile" options={[{ value: '', label: 'Move to', disabled: true }, ...profiles.filter(p => p.value !== it.profile)]} onPick={p => act.move([it], p)}><Icon name="move" /></Menu>
+        <button className="tool" data-tip="Delete" data-keys="Delete" aria-label="Delete" onClick={() => act.del([it])}><Icon name="trash" /></button>
       </header>
       <div className={'pbody ' + it.kind}>
         {body}
@@ -242,10 +253,10 @@ export function Zoom({ it, act, onClose, step }: { it: Item; act: Act; onClose: 
         <span className="dim">{stamp(it.created_at)}</span>
         <span className="gap" />
         <button className="btn" onClick={() => setFit(!fit)}>{fit ? 'Actual size' : 'Fit'}</button>
-        <button className="btn" onClick={() => act.shot(it, 'copy')}><Icon name="copy" />Copy image</button>
-        <button className="tool" title="Open in Preview" aria-label="Open in Preview" onClick={() => act.shot(it, 'open')}><Icon name="reveal" /></button>
-        <button className="tool" title="Show in Finder" aria-label="Show in Finder" onClick={() => act.shot(it, 'reveal')}><Icon name="path" /></button>
-        <button className="tool" title="Close (Esc)" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
+        <button className="tool" data-tip="Copy image" data-keys="Cmd C" aria-label="Copy image" onClick={() => act.shot(it, 'copy')}><Icon name="copy" /></button>
+        <button className="tool" data-tip="Open in Preview" data-keys="Cmd O" aria-label="Open in Preview" onClick={() => act.shot(it, 'open')}><Icon name="reveal" /></button>
+        <button className="tool" data-tip="Show in Finder" data-keys="Cmd Shift R" aria-label="Show in Finder" onClick={() => act.shot(it, 'reveal')}><Icon name="path" /></button>
+        <button className="tool" data-tip="Close" data-keys="Esc" aria-label="Close" onClick={onClose}><Icon name="x" /></button>
       </header>
       <div className={'stage' + (fit ? ' fit' : '')} onClick={e => e.target === e.currentTarget && onClose()}>
         <img src={fileUrl(it.file!)} alt="" onClick={() => setFit(!fit)} />

@@ -8,7 +8,9 @@
   --ink: #1f2a2e; --ink-2: #44514f; --ink-3: #535d59;
   --line: rgba(31, 42, 46, .08); --line-2: rgba(31, 42, 46, .16); --sep: rgba(31, 42, 46, .13);
   --hover: rgba(31, 42, 46, .045);
-  --teal: #5fb3a5; --teal-ink: #22695e; --teal-tint: rgba(95, 179, 165, .2); --teal-sel: rgba(95, 179, 165, .34);
+  --teal: #5fb3a5; --teal-ink: #22695e; --teal-tint: rgba(95, 179, 165, .2);
+  --sel: rgba(95, 179, 165, .24); --sel-dim: rgba(31, 42, 46, .075); --raised: #fffefa;
+  --menu: rgba(252, 250, 243, .96); --tip: #fbf8f0;
   --blush: #f29a8a; --blush-ink: #9c4036; --blush-tint: rgba(242, 154, 138, .22);
   --drop: #9ad8f0; --on-teal: #1f2a2e; --edge: #1f2a2e;
   --mark: rgba(154, 216, 240, .6);
@@ -24,7 +26,9 @@
     --ink: #eee7d4; --ink-2: #c2bcab; --ink-3: #98a19b;
     --line: rgba(238, 231, 212, .08); --line-2: rgba(238, 231, 212, .15); --sep: #0a1012;
     --hover: rgba(238, 231, 212, .045);
-    --teal: #6cc0b1; --teal-ink: #84d2c4; --teal-tint: rgba(108, 192, 177, .15); --teal-sel: rgba(108, 192, 177, .27);
+    --teal: #6cc0b1; --teal-ink: #84d2c4; --teal-tint: rgba(108, 192, 177, .15);
+    --sel: rgba(108, 192, 177, .2); --sel-dim: rgba(238, 231, 212, .08); --raised: #263439;
+    --menu: rgba(36, 50, 55, .96); --tip: #2a393e;
     --blush-ink: #f4a898; --blush-tint: rgba(242, 154, 138, .16);
     --on-teal: #142024; --edge: #0d1416;
     --mark: rgba(154, 216, 240, .26);
@@ -55,3 +59,25 @@ kbd { font: 500 11px/16px var(--font); color: var(--ink-3); border-radius: 4px; 
 .appic { flex: none; width: 16px; height: 16px; object-fit: contain; }
 .appic.mono { display: inline-grid; place-items: center; width: 14px; height: 14px; margin: 1px; border-radius: 4px; background: var(--blush); color: #1f2a2e; font: 700 7.5px/1 var(--round); letter-spacing: -.02em; font-style: normal; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .25); }
 .livedot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #4cc38a; box-shadow: 0 0 0 2px color-mix(in srgb, #4cc38a 25%, transparent); }
+/* Shared controls: the window tooltip (Tips), pop-up menus and their pop-up buttons (Menu). */
+.tip { position: fixed; z-index: 40; display: flex; align-items: center; gap: 10px; max-width: 300px; padding: 3px 8px; border-radius: 6px; background: var(--tip); color: var(--ink); font-size: 12px; line-height: 17px; box-shadow: 0 0 0 .5px var(--line-2), 0 4px 14px -2px rgba(0, 0, 0, .2); pointer-events: none; overflow-wrap: anywhere; }
+.tip kbd { margin: 0; padding: 0; box-shadow: none; font-size: 11.5px; color: var(--ink-3); }
+.menu { position: fixed; z-index: 30; display: grid; min-width: 150px; max-width: 320px; max-height: calc(100vh - 16px); overflow: auto; padding: 5px; border-radius: 9px; background: var(--menu); -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .18), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 12px 32px -8px rgba(0, 0, 0, .32), 0 2px 6px rgba(0, 0, 0, .08); outline: none; }
+.menu button { display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: none; color: var(--ink); font-size: 13px; text-align: left; white-space: nowrap; cursor: default; }
+.menu.checks button { padding-left: 6px; }
+.menu .ic { width: 13px; height: 13px; }
+.menu .nocheck { width: 13px; flex: none; }
+.menu .appic { width: 16px; height: 16px; }
+.menu .dot { margin: 0 2px; }
+.menu .n { margin-left: auto; padding-left: 20px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.menu button.at { background: var(--teal); color: var(--on-teal); }
+.menu button.at .n { color: inherit; }
+.menu .danger { color: var(--blush-ink); }
+.menu .danger.at { background: var(--blush); color: #1f2a2e; }
+.menu button:disabled { color: var(--ink-3); opacity: .55; }
+.pick { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; height: 26px; padding: 0 5px 0 9px; border: 0; border-radius: 6px; background: var(--raised); color: var(--ink); text-align: left; box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 1px rgba(0, 0, 0, .05); }
+.pick .cur { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+.pick .cur .n { display: none; }
+.pick .appic { width: 16px; height: 16px; }
+.pick .dot { margin: 0; }
+.pick > .ic { width: 13px; height: 13px; color: var(--ink-3); }

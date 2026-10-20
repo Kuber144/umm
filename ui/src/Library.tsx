@@ -3,19 +3,20 @@ import { api, type Agent, type Item, type Kind, type Origin, type Profiles, type
 import { native, pending, send } from './bridge'
 import Connections from './Connections'
 import { Glyph, Preview, Row, Zoom, copyText, projectName, type Act } from './Memory'
-import Settings from './Settings'
-import { AppIcon, Dot, Icon, Kbd, Pop, SOURCES, clock } from './ui'
+import Settings, { Welcome } from './Settings'
+import { AppIcon, Dot, Icon, Kbd, Menu, Pop, SOURCES, Tips, clock, type Opt } from './ui'
 import icon from '../../assets/icon.svg'
 import './main.css'
 
 const PAGE = 40
-const KINDS: [Kind, string][] = [['screenshot', 'Screenshots'], ['text', 'Notes'], ['link', 'Links'], ['path', 'Paths'], ['voice', 'Voice']]
+const KINDS: [Kind, string, string][] = [['screenshot', 'Screenshots', 'screenshot'], ['text', 'Notes', 'note'], ['link', 'Links', 'link'], ['path', 'Paths', 'path'], ['voice', 'Voice', 'voice note']]
 const EMPTY: Record<string, string> = {
   user: 'Press Ctrl+Shift+Space, then Enter, to keep what is on your screen. Or drop a file or some text here.',
   agent: 'Ask Claude to remember something and it shows up here.',
 }
 const day = (v: string) => new Date(v + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
+const SKIP = 'umm.welcome'  // localStorage, set when the first run guide is skipped
 const typing = (t: EventTarget | null) => /^(INPUT|TEXTAREA|SELECT)$/.test((t as HTMLElement)?.tagName)
 // totals per key, most first, from GET /api/origins rows
 const tally = (rows: Origin[], key: 'source' | 'agent' | 'cwd') => {
@@ -74,6 +75,7 @@ export default function Library() {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmDel, setConfirmDel] = useState(false)
+  const [skipped, setSkipped] = useState(() => { try { return !!localStorage.getItem(SKIP) } catch { return false } })
   const [, tick] = useReducer(x => x + 1, 0)
   const searchRef = useRef<HTMLInputElement>(null)
   const sentinel = useRef<HTMLDivElement>(null)
@@ -309,7 +311,6 @@ export default function Library() {
       if (e.key === 'ArrowDown' || e.key === 'j') step(1)
       else if (e.key === 'ArrowUp' || e.key === 'k') step(-1)
       else if (e.metaKey && e.key === 'a' && list.length) { e.preventDefault(); setPicked(list.map(x => x.id)) }
-      else if (e.metaKey && e.key === 'c' && it && getSelection()?.isCollapsed) { e.preventDefault(); act.copy(it) }
       else if (e.key === 'Enter' && it && free) { e.preventDefault(); open(it) }
       else if (e.key === ' ' && it?.kind === 'screenshot' && free) { e.preventDefault(); setZoom(it.id) }
       else if ((e.key === 'Backspace' || e.key === 'Delete') && chosen.length && free) { e.preventDefault(); remove(chosen) }
@@ -348,57 +349,61 @@ export default function Library() {
   const nFilters = +!!app + +!!since + +!!until + +!!source + +!!(agent && scope !== 'agent') + +!!(project && scope !== 'agent') + +(sort !== '' && sortNow !== (q.trim() ? 'relevance' : 'new'))
   const chip = (on: boolean, set: () => void, label: React.ReactNode, n: number, key: string) =>
     <button key={key} className={'chip' + (on ? ' on' : '')} aria-pressed={on} onClick={set}>{label}<span className="n">{n}</span></button>
+  const counted = (value: string, label: React.ReactNode, n: number): Opt => ({ value, text: value, label: <>{label}<span className="n">{n}</span></> })
+  const field = (name: string, value: string, set: (v: string) => void, opts: Opt[]) => (
+    <div className="field"><span>{name}</span>
+      <Menu label={name} value={value} onPick={set} options={opts}><span className="cur">{opts.find(o => o.value === value)?.label ?? value}</span><Icon name="updown" /></Menu>
+    </div>
+  )
   const side = (v: View, ic: 'plug' | 'gear', label: string, extra: React.ReactNode) =>
     <button className={'prof' + (view === v ? ' on' : '')} onClick={() => { flush(); setView(view === v ? 'list' : v) }}>
       <Icon name={ic} /><span className="name">{label}</span>{extra}
     </button>
 
+  // kinds in the selection, for the summary: "2 screenshots and 1 note"
+  const kindsIn = KINDS.map(([k, , one]) => [chosen.filter(x => x.kind === k).length, one] as const).filter(([c]) => c).map(([c, one]) => plural(c, one))
+  const toProfile = (ps: string[]): Opt[] => ps.map(p => ({ value: p, label: <><Dot name={p} />{p}</>, text: p }))
   const pane = composing ? <NewNote to={saveTo} onSave={save} onClose={() => setComposing(false)} />
     : chosen.length > 1 ? (
-      <section className="pane bulk" aria-label="Selection">
+      <section className="pane state bulk" aria-label="Selection">
         <div className="stack">{chosen.slice(0, 4).map(it => <span key={it.id}><Glyph it={it} /></span>)}</div>
         <h2>{plural(chosen.length, 'memory', 'memories')} selected</h2>
+        <p>{kindsIn.length > 1 ? kindsIn.slice(0, -1).join(', ') + ' and ' + kindsIn[kindsIn.length - 1] : kindsIn[0]}</p>
         <div className="btns">
-          <label className="btn pick"><Icon name="move" />Move to...
-            <select value="" onChange={e => e.target.value && act.move(chosen, e.target.value)} aria-label="Move to profile">
-              <option value="">Move to...</option>
-              {names.map(p => <option key={p}>{p}</option>)}
-            </select>
-          </label>
-          <button className="btn danger" onClick={() => remove(chosen)}><Icon name="trash" />Delete {chosen.length}</button>
+          <Menu className="btn" label="Move to profile" options={toProfile(names.filter(n => chosen.some(x => x.profile !== n)))} onPick={p => act.move(chosen, p)}><Icon name="move" />Move to<Icon name="caret" /></Menu>
+          <button className="btn danger" onClick={() => remove(chosen)}><Icon name="trash" />Delete</button>
         </div>
-        <p className="dim"><Kbd>Esc</Kbd> clears the selection</p>
+        <p className="keys"><Kbd>Esc</Kbd> clears the selection</p>
       </section>
-    ) : chosen[0] ? <Preview key={chosen[0].id} it={chosen[0]} q={q} act={act} profiles={names} />
+    ) : chosen[0] ? <Preview key={chosen[0].id} it={chosen[0]} q={q} act={act} profiles={toProfile(names)} />
     : (
-      <section className="pane none">
+      <section className="pane state">
         {loaded && !list.length && !filtered ? <>
           <img src={icon} alt="" />
-          <h2>Nothing here yet</h2>
+          <h2>Nothing in {scope === '*' ? 'any profile' : scope} yet</h2>
           <p>{EMPTY[scope] ?? 'Drop a file or some text here, or press Ctrl+Shift+Space anywhere.'}</p>
-          <button className="btn primary" onClick={() => setComposing(true)}><Icon name="plus" />New note</button>
+          <div className="btns"><button className="btn" onClick={() => setComposing(true)}><Icon name="compose" />New note</button></div>
         </> : loaded && !list.length ? <>
-          <h2>Nothing matches</h2>
+          <span className="glyphbig"><Icon name="search" /></span>
+          <h2>{q.trim() ? `No results for "${q.trim()}"` : 'Nothing matches these filters'}</h2>
           <p>Try fewer words or remove a filter.</p>
           <div className="btns">
             {scope !== '*' && <button className="btn" onClick={() => go('*')}>Search all profiles</button>}
-            <button className="btn" onClick={clearFilters}>Clear filters</button>
+            <button className="btn" onClick={() => { clearFilters(); setSort('') }}>Clear search and filters</button>
           </div>
-        </> : loaded && <p className="dim">Select a memory to see it here</p>}
+        </> : loaded && <p>Select a memory to see it here</p>}
       </section>
     )
+  const first = loaded && !failed && !skipped && !composing && profiles.all.length > 0 && count('*') === 0
 
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand">
-          <img src={icon} alt="" />
-          <span className="word">umm</span><span className="dots" aria-hidden="true"><i /><i /><i /></span>
-        </div>
+        <h3>Profiles</h3>
         <nav>
           {names.map((p, i) => (
             <button key={p} className={'prof' + (scope === p && view === 'list' ? ' on' : '')} onClick={() => go(p)}
-              title={(p === profiles.active ? 'New saves land here. ' : '') + (i < 9 ? `Cmd ${i + 1}` : '')}>
+              data-tip={p === profiles.active ? `${p}, where new saves land` : p} data-keys={i < 9 ? `Cmd ${i + 1}` : undefined}>
               <Dot name={p} /><span className="name">{p}</span><span className="n">{count(p)}</span>
             </button>
           ))}
@@ -411,7 +416,7 @@ export default function Library() {
           <button className={'prof' + (scope === '*' && view === 'list' ? ' on' : '')} onClick={() => go('*')}>
             <Icon name="stack" /><span className="name">All profiles</span><span className="n">{count('*')}</span>
           </button>
-          {side('connections', 'plug', 'Connections', live > 0 && <span className="n"><i className="livedot" />{live}</span>)}
+          {side('connections', 'plug', 'Connections', live > 0 && <span className="n" data-tip={`${plural(live, 'agent')} connected now`}><i className="livedot" />{live}</span>)}
           {side('settings', 'gear', 'Settings', null)}
         </div>
       </aside>
@@ -426,12 +431,8 @@ export default function Library() {
                 ? <input className="rename" autoFocus defaultValue={scope} onBlur={e => rename(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = scope; e.currentTarget.blur() } }} />
                 : <h1>{scope === '*' ? 'All profiles' : scope || 'umm'}</h1>}
               {custom && renaming === null && (
-                <Pop trigger={t => <button className="icon" onClick={t} title="Profile options" aria-label="Profile options"><Icon name="caret" /></button>}>
-                  {close => <div className="menu">
-                    <button onClick={() => { close(); setRenaming(scope) }}>Rename</button>
-                    <button className="danger" onClick={() => { close(); setConfirmDel(true) }}>Delete profile</button>
-                  </div>}
-                </Pop>
+                <Menu className="icon" label="Profile options" tip="Profile options" onPick={v => (v === 'rename' ? setRenaming(scope) : setConfirmDel(true))}
+                  options={[{ value: 'rename', label: 'Rename...' }, { value: 'delete', label: 'Delete profile...', danger: true }]}><Icon name="caret" /></Menu>
               )}
             </div>
             {confirmDel
@@ -441,64 +442,40 @@ export default function Library() {
           <label className="search">
             <Icon name="search" />
             <input ref={searchRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Search" aria-label="Search" spellCheck={false} />
-            {q ? <button className="clear" onClick={() => setQ('')} aria-label="Clear search"><Icon name="x" /></button> : <Kbd>Cmd K</Kbd>}
+            {q ? <button className="clear" onClick={() => setQ('')} aria-label="Clear search" data-tip="Clear search" data-keys="Esc"><Icon name="x" /></button> : <Kbd>Cmd K</Kbd>}
           </label>
-          <button className={'tbtn rec' + (rec.on ? ' on' : '')} onClick={toggleRec} title={rec.on ? 'Stop recording' : 'Record a voice note'} aria-label={rec.on ? 'Stop recording' : 'Record a voice note'}>
+          <button className={'tbtn rec' + (rec.on ? ' on' : '')} onClick={toggleRec} data-tip={rec.on ? 'Stop recording' : 'Record a voice note'} aria-label={rec.on ? 'Stop recording' : 'Record a voice note'}>
             {rec.on ? <><i className="recdot" />{clock(rec.seconds)}</> : rec.transcribing ? <><Icon name="voice" />Transcribing</> : <Icon name="voice" />}
           </button>
-          <button className="tbtn new" onClick={() => setComposing(true)} title="New note (Cmd N)"><Icon name="plus" />New note</button>
+          <button className="tbtn" onClick={() => setComposing(true)} data-tip="New note" data-keys="Cmd N" aria-label="New note"><Icon name="compose" /></button>
         </header>
 
         {failed ? (
-          <div className="empty">
+          <div className="state">
             <img src={icon} alt="" />
             <h2>Cannot reach the umm backend</h2>
             <p>Your memories are safe on disk. The app restarts the backend on its own, and this page tries again every 2 seconds.</p>
-            <div><button className="btn" onClick={() => { refreshProfiles(); if (scope) refresh() }}>Retry now</button></div>
+            <div className="btns"><button className="btn" onClick={() => { refreshProfiles(); if (scope) refresh() }}>Retry now</button></div>
           </div>
-        ) : <div className="split">
+        ) : first ? <Welcome onSkip={() => { try { localStorage.setItem(SKIP, '1') } catch { /* private window */ } setSkipped(true) }} />
+        : <div className="split">
           <div className="col">
             <div className="scope">
               <div className="seg" role="tablist" aria-label="Kind">
                 {([[null, 'All'], ...KINDS] as [Kind | null, string][]).map(([k, label]) => {
                   const on = k ? kinds[0] === k : !kinds.length
-                  return <button key={label} role="tab" aria-selected={on} className={on ? 'on' : ''} title={label} aria-label={label} onClick={() => setKinds(k ? [k] : [])}>{k ? <Icon name={k} /> : 'All'}</button>
+                  return <button key={label} role="tab" aria-selected={on} className={on ? 'on' : ''} data-tip={k ? label : 'Everything'} aria-label={label} onClick={() => setKinds(k ? [k] : [])}>
+                    {k && <Icon name={k} />}<span className={k ? 'segt' : ''}>{label}</span></button>
                 })}
               </div>
               <span className="gap" />
-              <Pop trigger={t => <button className={'icon' + (nFilters ? ' lit' : '')} onClick={t} title="Sort and filter" aria-label="Sort and filter"><Icon name="filter" />{nFilters ? <span className="n">{nFilters}</span> : null}</button>}>
+              <Pop trigger={t => <button className={'icon' + (nFilters ? ' lit' : '')} onClick={t} data-tip="Sort and filter" aria-label="Sort and filter"><Icon name="filter" />{nFilters ? <span className="n">{nFilters}</span> : null}</button>}>
                 {() => <div className="fields">
-                  <label>Sort
-                    <select value={sortNow} onChange={e => setSort(e.target.value)}>
-                      <option value="new">Newest first</option>
-                      <option value="old">Oldest first</option>
-                      <option value="relevance" disabled={!q.trim()}>Best match</option>
-                    </select>
-                  </label>
-                  <label>App
-                    <select value={app} onChange={e => setApp(e.target.value)}>
-                      <option value="">Any app</option>
-                      {apps.map(a => <option key={a.app} value={a.app}>{a.app} ({a.count})</option>)}
-                    </select>
-                  </label>
-                  {sources.length > 1 && <label>Saved with
-                    <select value={source} onChange={e => setSource(e.target.value)}>
-                      <option value="">Anything</option>
-                      {sources.map(([s, c]) => <option key={s} value={s}>{SOURCES[s]?.[1] ?? s} ({c})</option>)}
-                    </select>
-                  </label>}
-                  {agents.length > 0 && scope !== 'agent' && <label>Agent
-                    <select value={agent} onChange={e => setAgent(e.target.value)}>
-                      <option value="">Any agent</option>
-                      {agents.map(([a, c]) => <option key={a} value={a}>{a} ({c})</option>)}
-                    </select>
-                  </label>}
-                  {projects.length > 0 && scope !== 'agent' && <label>Project
-                    <select value={project} onChange={e => setProject(e.target.value)}>
-                      <option value="">Any project</option>
-                      {projects.map(([p, c]) => <option key={p} value={p}>{projectName(p)} ({c})</option>)}
-                    </select>
-                  </label>}
+                  {field('Sort', sortNow, setSort, [{ value: 'new', label: 'Newest first' }, { value: 'old', label: 'Oldest first' }, { value: 'relevance', label: 'Best match', disabled: !q.trim() }])}
+                  {field('App', app, setApp, [{ value: '', label: 'Any app' }, ...apps.map(a => counted(a.app, <><AppIcon name={a.app} />{a.app}</>, a.count))])}
+                  {sources.length > 1 && field('Saved with', source, setSource, [{ value: '', label: 'Anything' }, ...sources.map(([v, c]) => counted(v, SOURCES[v]?.[1] ?? v, c))])}
+                  {agents.length > 0 && scope !== 'agent' && field('Agent', agent, setAgent, [{ value: '', label: 'Any agent' }, ...agents.map(([v, c]) => counted(v, <><AppIcon name={v} />{v}</>, c))])}
+                  {projects.length > 0 && scope !== 'agent' && field('Project', project, setProject, [{ value: '', label: 'Any project' }, ...projects.map(([v, c]) => counted(v, projectName(v), c))])}
                   <div className="pair">
                     <label>From<input type="date" value={since} max={until || undefined} onChange={e => setSince(e.target.value)} /></label>
                     <label>Until<input type="date" value={until} min={since || undefined} onChange={e => setUntil(e.target.value)} /></label>
@@ -509,7 +486,7 @@ export default function Library() {
             {scope === 'agent' && agents.length > 0 && (
               <div className="facets">
                 {agents.length > 1 && agents.map(([a, c]) => chip(agent === a, () => setAgent(agent === a ? '' : a), <><AppIcon name={a} />{a}</>, c, a))}
-                {projects.map(([p, c]) => chip(project === p, () => setProject(project === p ? '' : p), <><Icon name="path" /><span title={p}>{projectName(p)}</span></>, c, p))}
+                {projects.map(([p, c]) => chip(project === p, () => setProject(project === p ? '' : p), <><Icon name="path" /><span data-tip={p}>{projectName(p)}</span></>, c, p))}
               </div>
             )}
             {(nFilters > 0 || session) && (
@@ -535,7 +512,7 @@ export default function Library() {
                       all={scope === '*'} onPick={onPick} onOpen={onOpen} />
                   ))}
                 </ul>
-              ) : loaded && filtered && <p className="nolist">No matches</p>}
+              ) : null}
               {more && <div ref={sentinel} className="more-sentinel">Loading more</div>}
             </div>
           </div>
@@ -544,6 +521,7 @@ export default function Library() {
         {drag && <div className="dropzone"><div><Icon name="plus" /><b>Drop to save in {saveTo}</b><span>Images become screenshots with their text. Files are saved as paths, text and links as notes.</span></div></div>}
         {toast && <div className="toast" role="status">{toast.msg}{toast.undo && <button onClick={undo}>Undo</button>}</div>}
       </main>}
+      <Tips />
       {zoomIt && <Zoom it={zoomIt} act={act} onClose={() => setZoom(null)} step={stepZoom} />}
     </div>
   )

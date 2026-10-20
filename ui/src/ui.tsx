@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 const paths = {
   screenshot: <><rect x="2" y="3.5" width="12" height="9" rx="2" /><path d="M2.5 11l3-3 2.5 2.5 2-2 3.5 3.5" /></>,
@@ -13,6 +13,8 @@ const paths = {
   user: <><circle cx="8" cy="5.5" r="2.5" /><path d="M3 13c.6-2.6 2.6-4 5-4s4.4 1.4 5 4" /></>,
   open: <><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M2 6.5h12" /></>,
   quit: <path d="M8 2v5.5M4.7 4.3a5 5 0 106.6 0" />,
+  compose: <path d="M13 8.8v3.4a1.3 1.3 0 01-1.3 1.3H3.8a1.3 1.3 0 01-1.3-1.3V4.3A1.3 1.3 0 013.8 3h3.4M11.4 2.4a1.4 1.4 0 012 2L8.6 9.2l-2.5.7.7-2.5z" />,
+  ctext: <><rect x="5.5" y="5.5" width="8" height="8" rx="1.8" /><path d="M10.5 3.5v-.2a1 1 0 00-1-1H3.8a1 1 0 00-1 1v5.7a1 1 0 001 1h.2M7.8 8.3h3.4M7.8 10.7h2.2" /></>,
   copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1.8" /><path d="M10.5 3.5v-.2a1 1 0 00-1-1H3.8a1 1 0 00-1 1v5.7a1 1 0 001 1h.2" /></>,
   edit: <path d="M3 13l.6-2.8L10.8 3a1.6 1.6 0 012.2 2.2L5.8 12.4zM9.6 4.3l2.1 2.1" />,
   move: <path d="M2 4.5h4l1.5 1.5H14v6.5H2zM6.5 9.3h4M9 7.8l1.5 1.5L9 10.8" />,
@@ -24,6 +26,7 @@ const paths = {
   pause: <path d="M5.5 3.8v8.4M10.5 3.8v8.4" />,
   filter: <path d="M2.5 4.5h11M4.8 8h6.4M7 11.5h2" />,
   caret: <path d="M4.5 6.5L8 10l3.5-3.5" />,
+  updown: <path d="M5.5 6.2L8 3.7l2.5 2.5M5.5 9.8L8 12.3l2.5-2.5" />,
   chevron: <path d="M6.5 4.5L10 8l-3.5 3.5" />,
   check: <path d="M3.5 8.5l3 3 6-7" />,
   gear: <><circle cx="8" cy="8" r="2" /><path d="M6.9 2h2.2l.4 1.6 1.2.5 1.4-.9 1.5 1.5-.9 1.4.5 1.2 1.6.4v2.2l-1.6.4-.5 1.2.9 1.4-1.5 1.5-1.4-.9-1.2.5-.4 1.6H6.9l-.4-1.6-1.2-.5-1.4.9-1.5-1.5.9-1.4-.5-1.2L2 9.1V6.9l1.6-.4.5-1.2-.9-1.4 1.5-1.5 1.4.9 1.2-.5z" /></>,
@@ -86,7 +89,7 @@ export function Pop({ trigger, children }: {
   useEffect(() => {
     if (!open) return
     const down = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target as Element).closest?.('[role=menu]')) { e.stopPropagation(); setOpen(false) } }
     window.addEventListener('mousedown', down)
     window.addEventListener('keydown', key, true)
     return () => { window.removeEventListener('mousedown', down); window.removeEventListener('keydown', key, true) }
@@ -97,6 +100,93 @@ export function Pop({ trigger, children }: {
       {open && <div className="popbody">{children(() => setOpen(false))}</div>}
     </div>
   )
+}
+
+// Fixed position next to an anchor rect: below (or above when there is no room), inside the window.
+function place(m: HTMLElement, r: DOMRect, center = false) {
+  const w = m.offsetWidth, h = m.offsetHeight
+  const x = center ? r.left + r.width / 2 - w / 2 : r.left
+  m.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px'
+  m.style.top = (r.bottom + 4 + h <= innerHeight - 8 ? r.bottom + 4 : r.top - 4 - h >= 8 ? r.top - 4 - h : Math.max(8, innerHeight - 8 - h)) + 'px'
+}
+
+// One tooltip for the window, instead of WebKit's slow title tooltip. Any element with data-tip shows it at once
+// on hover, data-keys is its shortcut. A click, a key or scrolling hides it until the pointer moves to another element.
+export function Tips() {
+  const [t, setT] = useState<{ el: HTMLElement; text: string; keys?: string } | null>(null)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    let cur: Element | null = null
+    const hide = () => setT(null)
+    const over = (e: MouseEvent) => {
+      const el = (e.target as Element).closest?.<HTMLElement>('[data-tip]') ?? null
+      if (el === cur) return
+      cur = el
+      setT(el?.dataset.tip ? { el, text: el.dataset.tip, keys: el.dataset.keys } : null)
+    }
+    const out = (e: MouseEvent) => { if (!e.relatedTarget) { cur = null; hide() } }  // the pointer left the window
+    const evs: [string, EventListener][] = [['mouseover', over as EventListener], ['mouseout', out as EventListener], ['mousedown', hide], ['keydown', hide], ['scroll', hide], ['blur', hide]]
+    evs.forEach(([n, f]) => window.addEventListener(n, f, true))
+    return () => evs.forEach(([n, f]) => window.removeEventListener(n, f, true))
+  }, [])
+  useLayoutEffect(() => { if (t) place(box.current!, t.el.getBoundingClientRect(), true) }, [t])
+  return t && <div ref={box} className="tip" role="tooltip">{t.text}{t.keys && <kbd>{t.keys}</kbd>}</div>
+}
+
+// A macOS style pop-up menu. With value it is a select: the current item has a check.
+// Arrows move, Enter or Space picks, Esc or Tab closes, typing jumps to an item.
+export type Opt = { value: string; label: ReactNode; text?: string; danger?: boolean; disabled?: boolean }
+export function Menu({ options, value, onPick, label, className = 'pick', tip, keys, children }: {
+  options: Opt[]; value?: string; onPick: (v: string) => void; label: string; className?: string; tip?: string; keys?: string; children: ReactNode
+}) {
+  const [at, setAt] = useState<number | null>(null)  // the highlighted item while open, null when closed
+  const btn = useRef<HTMLButtonElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const typed = useRef({ s: '', t: 0 })
+  const open = at !== null
+  const show = () => setAt(options.findIndex(o => o.value === value && !o.disabled))  // -1: open, nothing highlighted
+  const close = (focus = true) => { setAt(null); if (focus) btn.current?.focus() }
+  const pick = (o?: Opt) => { if (o && !o.disabled) { close(); onPick(o.value) } }
+  useLayoutEffect(() => { if (open) { place(box.current!, btn.current!.getBoundingClientRect()); box.current!.focus() } }, [open])
+  useEffect(() => {
+    if (!open) return
+    const away = (e: Event) => { if (!box.current?.contains(e.target as Node)) close(false) }
+    window.addEventListener('resize', away); window.addEventListener('scroll', away, true)
+    return () => { window.removeEventListener('resize', away); window.removeEventListener('scroll', away, true) }
+  })
+  const key = (e: React.KeyboardEvent) => {
+    e.stopPropagation()
+    const n = options.length
+    const step = (d: number) => {
+      const i = at! >= 0 ? at! : d > 0 ? -1 : n
+      for (let k = 1; k <= n; k++) if (!options[(i + d * k + n * k) % n].disabled) return setAt((i + d * k + n * k) % n)
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') step(e.key === 'ArrowDown' ? 1 : -1)
+    else if (e.key === 'Enter' || e.key === ' ') pick(options[at!])
+    else if (e.key === 'Escape' || e.key === 'Tab') close()
+    else if (e.key.length === 1 && !e.metaKey) {
+      const ty = typed.current
+      ty.s = (Date.now() - ty.t < 700 ? ty.s : '') + e.key.toLowerCase(); ty.t = Date.now()
+      const j = options.findIndex(o => !o.disabled && (o.text ?? String(o.label)).toLowerCase().startsWith(ty.s))
+      if (j >= 0) setAt(j)
+    } else return
+    e.preventDefault()
+  }
+  return <>
+    <button ref={btn} type="button" className={className} aria-label={label} aria-haspopup="menu" aria-expanded={open} data-tip={open ? undefined : tip} data-keys={keys}
+      onMouseDown={e => open && e.preventDefault()} onClick={() => (open ? close() : show())}
+      onKeyDown={e => { if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); e.stopPropagation(); show() } }}>{children}</button>
+    {open && <div ref={box} role="menu" aria-label={label} tabIndex={-1} className={'menu' + (value === undefined ? '' : ' checks')}
+      onKeyDown={key} onBlur={e => !box.current?.contains(e.relatedTarget) && close(false)}>
+      {options.map((o, i) => (
+        <button key={o.value} type="button" tabIndex={-1} role={value === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={value === undefined ? undefined : o.value === value}
+          className={(i === at ? 'at' : '') + (o.danger ? ' danger' : '')} disabled={o.disabled}
+          onMouseDown={e => e.preventDefault()} onMouseMove={() => !o.disabled && at !== i && setAt(i)} onClick={() => pick(o)}>
+          {value !== undefined && (o.value === value ? <Icon name="check" /> : <i className="nocheck" />)}{o.label}
+        </button>
+      ))}
+    </div>}
+  </>
 }
 
 // Highlight the query words. Search matches word prefixes, so only a word's start is marked.
