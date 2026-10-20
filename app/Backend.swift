@@ -1,15 +1,17 @@
 import Foundation
 
 let root = Bundle.main.object(forInfoDictionaryKey: "UmmRoot") as! String
-let sockPath = root + "/data/umm.sock"
+// socket and log sit at a fixed short path. The backend finds the data folder itself (backend/db.py), so a restart follows a move
+let base = NSHomeDirectory() + "/Library/Application Support/umm"
+let sockPath = base + "/umm.sock"
 let backend = Backend()
 
 final class Backend {
     var proc: Process?, quitting = false, fails = 0, started = Date()
 
     func start() {
-        let log = root + "/data/umm.log"
-        try? FileManager.default.createDirectory(atPath: root + "/data", withIntermediateDirectories: true)
+        let log = base + "/umm.log"
+        try? FileManager.default.createDirectory(atPath: base, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         if let n = (try? FileManager.default.attributesOfItem(atPath: log))?[.size] as? Int, n > 5_000_000 { truncate(log, 0) }
         // an orphan from a killed app would still hold the socket
         let k = Process()
@@ -22,23 +24,26 @@ final class Backend {
 
     func spawn() {
         unlink(sockPath)
-        let log = FileHandle(fileDescriptor: open(root + "/data/umm.log", O_WRONLY | O_APPEND | O_CREAT, 0o644), closeOnDealloc: true)
+        let log = FileHandle(fileDescriptor: open(base + "/umm.log", O_WRONLY | O_APPEND | O_CREAT, 0o600), closeOnDealloc: true)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: root + "/backend/.venv/bin/python")
         p.arguments = ["-m", "uvicorn", "api:app", "--uds", sockPath, "--no-access-log"]
         p.currentDirectoryURL = URL(fileURLWithPath: root + "/backend")
         p.standardOutput = log
         p.standardError = log
-        p.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.died() } }
+        p.terminationHandler = { [weak self] p in
+            let asked = p.terminationReason == .exit && p.terminationStatus == 0
+            DispatchQueue.main.async { self?.died(asked) }
+        }
         started = Date()
         proc = p
         do { try p.run() } catch { NSLog("umm: backend failed to start: \(error)"); died() }
     }
 
-    // restart with backoff: 1s, 2s, 4s ... 30s, reset after 30s of uptime
-    func died() {
+    // restart with backoff: 1s, 2s, 4s ... 30s, reset after 30s of uptime. Exit 0 is asked for (a data folder move): 0.5s
+    func died(_ asked: Bool = false) {
         guard !quitting else { return }
-        fails = Date().timeIntervalSince(started) > 30 ? 1 : fails + 1
+        fails = asked ? 0 : Date().timeIntervalSince(started) > 30 ? 1 : fails + 1
         DispatchQueue.main.asyncAfter(deadline: .now() + min(30, pow(2, Double(fails - 1)))) { [weak self] in
             if self?.quitting == false { self?.spawn() }
         }

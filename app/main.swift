@@ -208,6 +208,14 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
         case "loginItem": loginItem(d["on"] as? Bool)
         case "settings": loginItem(nil)
+        case "chooseFolder":
+            let p = NSOpenPanel()
+            p.canChooseFiles = false
+            p.canChooseDirectories = true
+            p.canCreateDirectories = true
+            if p.runModal() == .OK, let path = p.url?.path, let js = try? JSONSerialization.data(withJSONObject: path, options: .fragmentsAllowed) {
+                m.webView?.evaluateJavaScript("window.ummFolder?.(\(String(decoding: js, as: UTF8.self)))")
+            }
         case "quit": NSApp.terminate(nil)
         default: break
         }
