@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 import { api, type Item, type Kind, type Profiles, type Rec } from './api'
 import { pending, send } from './bridge'
 import { Detail, Row, copyText, projectName, type Act } from './Memory'
+import Settings from './Settings'
 import { Dot, Icon, Kbd, Pop, clock } from './ui'
 import icon from '../../assets/icon.svg'
 import './main.css'
@@ -37,6 +38,7 @@ export default function Library() {
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmDel, setConfirmDel] = useState(false)
+  const [settings, setSettings] = useState(false)
   const [, tick] = useReducer(x => x + 1, 0)
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -97,7 +99,7 @@ export default function Library() {
   const primary = (it: Item) => (it.kind === 'screenshot' ? setDetail(it.id) : it.kind === 'link' ? send({ type: 'openExternal', url: copyText(it) }) : act.copy(it))
 
   const go = (name: string) => {
-    flush(); setScope(name); setApp(''); setSel(-1); setConfirmDel(false); setRenaming(null)
+    flush(); setSettings(false); setScope(name); setApp(''); setSel(-1); setConfirmDel(false); setRenaming(null)
     if (name !== '*') api.setProfile(name).then(refreshProfiles)
   }
   const names = [...profiles.all.map(p => p.name)].sort((a, b) => +(b === 'user') - +(a === 'user') || +(b === 'agent') - +(a === 'agent') || a.localeCompare(b))
@@ -150,7 +152,7 @@ export default function Library() {
 
   // native bridge
   useEffect(() => {
-    const open = (o: { query?: string }) => { setQ(o.query ?? ''); setDetail(null); searchRef.current?.focus(); refreshProfiles() }
+    const open = (o: { query?: string }) => { setQ(o.query ?? ''); setDetail(null); setSettings(false); searchRef.current?.focus(); refreshProfiles() }
     window.ummOpen = open
     if (pending.open) { open(pending.open); pending.open = undefined }
     return () => { window.ummOpen = undefined }
@@ -159,12 +161,14 @@ export default function Library() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (detail !== null) return
+      if (e.metaKey && e.key === ',') { e.preventDefault(); setSettings(s => !s); return }
       const t = e.target as HTMLElement
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)
       const search = searchRef.current
       if (e.metaKey && e.key === 'k') { e.preventDefault(); search?.focus(); search?.select(); return }
       if (e.metaKey && e.key === 'n') { e.preventDefault(); composerRef.current?.focus(); return }
       if (e.metaKey && /^[1-9]$/.test(e.key)) { if (order[+e.key - 1]) { e.preventDefault(); go(order[+e.key - 1]) } return }
+      if (settings) return
       if (typing) {
         if (t === search && e.key === 'Escape') { if (q) setQ(''); else t.blur() }
         else if (t === search && e.key === 'ArrowDown' && list.length) { e.preventDefault(); t.blur(); setSel(0) }
@@ -221,7 +225,7 @@ export default function Library() {
         </div>
         <nav>
           {names.map(n => (
-            <button key={n} className={'prof' + (scope === n ? ' on' : '') + (n === 'agent' ? ' agent' : '')} onClick={() => go(n)} title={n === profiles.active ? 'New saves land here' : undefined}>
+            <button key={n} className={'prof' + (scope === n && !settings ? ' on' : '') + (n === 'agent' ? ' agent' : '')} onClick={() => go(n)} title={n === profiles.active ? 'New saves land here' : undefined}>
               <Dot name={n} /><span className="name"><span>{n}</span></span><span className="n">{count(n)}</span>
             </button>
           ))}
@@ -230,12 +234,17 @@ export default function Library() {
                 onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = ''; e.currentTarget.blur() } }} />
             : <button className="prof add" onClick={() => setCreating(true)}><Icon name="plus" /><span className="name"><span>New profile</span></span></button>}
         </nav>
-        <button className={'prof all' + (scope === '*' ? ' on' : '')} onClick={() => go('*')}>
-          <span className="name"><span>All profiles</span></span><span className="n">{count('*')}</span>
-        </button>
+        <div className="foot">
+          <button className={'prof all' + (scope === '*' && !settings ? ' on' : '')} onClick={() => go('*')}>
+            <span className="name"><span>All profiles</span></span><span className="n">{count('*')}</span>
+          </button>
+          <button className={'prof gear' + (settings ? ' on' : '')} onClick={() => setSettings(s => !s)}>
+            <Icon name="gear" /><span className="name"><span>Settings</span></span><Kbd>Cmd ,</Kbd>
+          </button>
+        </div>
       </aside>
 
-      <main className={scope === 'agent' ? 'agent' : ''}>
+      {settings ? <Settings profiles={profiles} onActive={n => api.setProfile(n).then(refreshProfiles)} /> : <main className={scope === 'agent' ? 'agent' : ''}>
         <header className="top">
           <div className="title">
             <div className="h">
@@ -340,7 +349,7 @@ export default function Library() {
           {more && <div ref={sentinel} className="more-sentinel">Loading more</div>}
         </div>
         {toast && <div className="toast" role="status">{toast.msg}{toast.undo && <button onClick={undo}>Undo</button>}</div>}
-      </main>
+      </main>}
       {detailIt && <Detail it={detailIt} act={act} onClose={() => setDetail(null)} step={step} />}
     </div>
   )

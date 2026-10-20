@@ -58,7 +58,20 @@ Any MCP client (Claude Code, Codex, Cursor) can use it, and they all share one m
 
 ## Voice
 
-Recording is 16 kHz mono and kept as 32 kbps AAC `.m4a`, which the app can play. Stopping starts transcription with local faster-whisper, model `medium`, in a child process that exits afterwards so its memory (about 2 GB at peak) goes back to the OS. Language detection only picks from `LANGUAGES` in `backend/record.py` (English and Hindi), because free detection misreads short clips. Non-English speech is saved as the original transcript plus an English translation, so English searches find it. The model loads from the HuggingFace cache and downloads once if missing.
+Recording is 16 kHz mono and kept as 32 kbps AAC `.m4a`, which the app can play. Stopping starts transcription with local faster-whisper in a child process that exits afterwards, so its memory (about 2 GB at peak for `medium`) goes back to the OS. The model (`small` or `medium`, default `medium`) and the languages (default English and Hindi) are in Settings. Detection only picks from your languages, because free detection misreads short clips. Non-English speech is saved as the original transcript plus an English translation, so English searches find it. The model loads from the HuggingFace cache and downloads once if missing.
+
+## Settings
+
+Open them with the gear at the bottom of the sidebar or `Cmd+,`. Changes save at once and need no restart.
+
+- Which profile hotkey saves go to.
+- Voice: languages and the Whisper model.
+- Privacy: apps where the hotbar screenshot refuses to capture, such as a password manager, and whether links are looked up.
+- Storage: size of `data/`, how many items of each kind, and a button that opens the folder.
+- Agents: the MCP command and the command line install, with copy buttons.
+- Startup: open umm at login.
+
+They are stored in `data/settings.json`. The defaults are in `backend/settings.py`.
 
 ## Layout
 
@@ -68,7 +81,7 @@ backend/   FastAPI on a Unix socket, MCP server, db.py (all SQL), record.py
 ui/        React + Vite, the hotbar and the main window
 assets/    icon.svg and the menu bar icon source
 docs/      architecture.md, plan.md
-data/      umm.db, files/, profile.txt, profiles.txt, umm.log, umm.sock
+data/      umm.db, files/, profile.txt, profiles.txt, settings.json, umm.log, umm.sock
 build/     umm.app
 ```
 

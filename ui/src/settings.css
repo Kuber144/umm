@@ -1,0 +1,35 @@
+.settings .scroll { padding: 0 32px 64px; }
+.sets { max-width: 680px; }
+.sets section { padding: 20px 0 8px; border-bottom: 1px solid var(--line); }
+.sets section:last-child { border-bottom: 0; }
+.sets h2 { margin: 0 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-3); font-family: var(--font); }
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 24px; padding: 10px 0; }
+.srow:has(.cmd), .srow:has(.chips), .srow:has(.apps) { grid-template-columns: 1fr; gap: 8px; }
+.lbl { display: grid; gap: 2px; min-width: 0; }
+.lbl b { font-weight: 600; }
+.lbl span { color: var(--ink-3); font-size: 12.5px; }
+.ctl { display: flex; justify-content: flex-end; min-width: 0; }
+.srow:has(.cmd) .ctl, .srow:has(.chips) .ctl, .srow:has(.apps) .ctl { justify-content: flex-start; }
+.pick { position: relative; display: inline-flex; align-items: center; height: 30px; padding: 0 8px 0 10px; border-radius: 8px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); }
+.pick select { appearance: none; border: 0; background: none; padding-right: 6px; cursor: pointer; }
+.pick .ic { color: var(--ink-3); pointer-events: none; }
+.chips, .apps { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { height: 26px; padding: 0 10px; border: 0; border-radius: 13px; background: var(--paper-2); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
+.chip:hover { color: var(--ink); }
+.chip.on { background: var(--teal-tint); color: var(--ink); font-weight: 600; box-shadow: inset 0 0 0 1px var(--teal); }
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); }
+.seg button { height: 26px; padding: 0 14px; border: 0; border-radius: 6px; background: none; color: var(--ink-3); }
+.seg button.on { background: var(--card); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--line-2); }
+.apps input { height: 24px; width: 180px; padding: 0 9px; border: 0; border-radius: 12px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); }
+.apps input:focus { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--teal); }
+.switch { flex: none; width: 34px; height: 20px; padding: 2px; border: 0; border-radius: 10px; background: var(--paper-3); box-shadow: inset 0 0 0 1px var(--line-2); text-align: left; transition: background .15s; }
+.switch i { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--card); box-shadow: 0 0 0 1px var(--line-2); transition: transform .15s; }
+.switch.on { background: var(--teal); }
+.switch.on i { transform: translateX(14px); }
+.cmd { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 6px 6px 10px; border-radius: 8px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); }
+.cmd code { flex: 1; min-width: 0; font: 12px/1.5 var(--mono); overflow-wrap: anywhere; user-select: all; }
+.cmd .btn { flex: none; gap: 6px; }
+.btn .ic { width: 14px; height: 14px; margin-right: 6px; }
+.cmd .btn .ic { margin: 0; }
+.foot { display: grid; gap: 2px; }
+.prof.gear .ic { margin-right: 8px; width: 14px; height: 14px; }

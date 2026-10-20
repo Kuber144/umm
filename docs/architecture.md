@@ -11,7 +11,7 @@ umm.app (Swift, app/)
   umm:// scheme handler  ->  HTTP over data/umm.sock  ->  backend
   starts backend/.venv/bin/python -m uvicorn api:app --uds data/umm.sock
 backend/ (Python, FastAPI)
-  api.py routes, db.py all SQL, record.py mic + Whisper
+  api.py routes, db.py all SQL, record.py mic + Whisper, settings.py defaults for data/settings.json
   serves ui/dist at / and data/files at /api/files
 mcp_server.py (stdio, started by Claude Code, reads umm.db directly)
 ui/ (React + Vite)
@@ -24,7 +24,7 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `umm.log`, `umm.sock`.
+- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
@@ -59,12 +59,15 @@ GET    /api/apps?profile=                                -> [{app, count}]   app
 POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?, meta?}                            -> {id}     screenshot + OCR, takes ~1s
+POST   /api/capture    {app?, meta?}                            -> {id}     screenshot + OCR, takes ~1s. 403 when the app is in excluded_apps
 GET    /api/context                                      -> {app, profile, clipboard, recording}
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
 POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent
 DELETE /api/profiles/{name}                              -> {}       deletes its items and files, not for user or agent
+GET    /api/settings                                     -> Settings
+PATCH  /api/settings   {any Settings keys}               -> Settings  422 on a bad value, unknown keys are ignored
+GET    /api/storage                                      -> {path, bytes, kinds}   size of data/ and item count per kind
 GET    /api/record                                       -> {on, seconds, transcribing}
 POST   /api/record/start {app?, meta?}                          -> same as GET /api/record
 POST   /api/record/stop                                  -> same, transcription runs in background and the voice item appears when done
@@ -74,6 +77,17 @@ GET    /api/agents                                       -> [{agent, agent_versi
          connected MCP servers. Each writes data/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
          memories = items with that session. Sorted by last_seen, files of dead pids are removed after 30 days.
 GET    /api/files/{name}                                 -> file
+```
+
+Settings live in `data/settings.json`. The defaults are the `Settings` model in `backend/settings.py`, the only place they are written. `settings.get()` reads the file on every call, so `record.py` and `api.py` pick up a change without a restart.
+
+```
+Settings = {languages, model, enrich_links, excluded_apps}
+languages:      language codes Whisper may detect, default ["en", "hi"]. [] allows any language
+model:          "small" | "medium", default "medium"
+enrich_links:   default true, fetch title and description of saved links
+excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
+                that POST /api/capture refuses
 ```
 
 ## Native bridge
@@ -93,6 +107,8 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "recording", on}            update the status bar item (red while recording)
 {type: "resize", height}           hotbar panel height in CSS px, width is fixed at 680
 {type: "openExternal", url}        open in the default browser
+{type: "settings"}                 ask for the login item state, Swift replies with window.ummSettings
+{type: "loginItem", on}            register or unregister umm as a login item (SMAppService.mainApp), then replies like "settings"
 {type: "quit"}                     kill switch, quits the app and the backend
 ```
 
@@ -103,6 +119,10 @@ window.ummShow?.(context)   called every time the hotbar opens. context is GET /
                             BEFORE umm takes focus so `app` is the user's app. UI resets, focuses the input.
                             In browser dev the UI calls this itself on load with a fetched context.
 window.ummOpen?.({query})   main window shown, optional search query
+window.ummSettings?.({loginItem, version})
+                            reply to "settings" and "loginItem". loginItem is on | approval | off | missing.
+                            approval means macOS wants the person to allow it in System Settings, Login Items.
+                            version is CFBundleShortVersionString. Browser dev never calls it and the UI hides the startup row.
 ```
 
 ## Hotbar
@@ -117,6 +137,13 @@ Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot 
 6. Switch profile
 7. Open umm (main window)
 8. Quit umm
+
+## Settings view
+
+The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Sections: saving (which profile hotkey saves go to, same as the active profile), voice, privacy, storage, agents (the MCP command with this install's path, the CLI install command), startup, about. Every change saves at once.
+
+The login item uses `SMAppService.mainApp`, which accepts the ad hoc signed bundle.
+When an excluded app is in front, the hotbar screenshot plays the error sound and the menu bar item shows "Excluded app" for 3 seconds.
 
 ## Rules for every agent
 

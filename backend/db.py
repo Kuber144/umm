@@ -137,6 +137,10 @@ def apps(profile=None):
     return [{"app": a, "count": n} for a, n in db.execute(sql, (profile,) if where else ())]
 
 
+def kinds():
+    return dict(db.execute("SELECT kind, count(*) FROM items GROUP BY kind").fetchall())
+
+
 def delete(id):
     row = db.execute("SELECT file FROM items WHERE rowid = ?", (id,)).fetchone()
     if row and row[0]:

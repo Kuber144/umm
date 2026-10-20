@@ -198,6 +198,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
                 hotbar.invalidateShadow()
             }
         case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
+        case "loginItem": loginItem(d["on"] as? Bool)
+        case "settings": loginItem(nil)
         case "quit": NSApp.terminate(nil)
         default: break
         }
@@ -209,7 +211,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         let body = (try? JSONSerialization.data(withJSONObject: ["app": lastApp])) ?? Data()
         DispatchQueue.global().async {
             let r = backend.request("POST", "/api/capture", headers: ["Content-Type": "application/json"], body: body)
-            DispatchQueue.main.async { self.play(r?.0 == 200 ? "Pop" : "Basso") }
+            DispatchQueue.main.async {
+                self.play(r?.0 == 200 ? "Pop" : "Basso")
+                if r?.0 == 403 { // excluded app: say why in the menu bar for a moment
+                    self.status.button?.title = " Excluded app"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.status.button?.title = "" }
+                }
+            }
         }
     }
 

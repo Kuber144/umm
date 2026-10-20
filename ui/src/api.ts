@@ -4,6 +4,8 @@ export type Item = { id: number; profile: string; kind: Kind; content: string; f
 export type Rec = { on: boolean; seconds: number; transcribing: number }
 export type Profiles = { active: string; all: { name: string; count: number }[] }
 export type Ctx = { app: string; profile: string; clipboard: string; recording: Rec }
+export type Settings = { languages: string[]; model: 'small' | 'medium'; enrich_links: boolean; excluded_apps: string[] }
+export type Storage = { path: string; bytes: number; kinds: Partial<Record<Kind, number>> }
 type Params = Record<string, string | number | undefined>
 
 const call = <T = object>(path: string, method = 'GET', body?: object): Promise<T> =>
@@ -30,5 +32,8 @@ export const api = {
   recStart: (app?: string) => call<Rec>('record/start', 'POST', { app }),
   recStop: () => call<Rec>('record/stop', 'POST'),
   copy: (text: string) => call('copy', 'POST', { text }),
+  settings: () => call<Settings>('settings'),
+  setSettings: (patch: Partial<Settings>) => call<Settings>('settings', 'PATCH', patch),
+  storage: () => call<Storage>('storage'),
   reveal: (text: string) => call('reveal', 'POST', { text }),
 }
