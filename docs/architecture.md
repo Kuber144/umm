@@ -45,13 +45,15 @@ All JSON. Paths are the same over the socket and in the Vite dev proxy.
 ```
 Item = {id, profile, kind, content, file, app, meta, created_at}
 kind: screenshot | text | path | link | voice
-file: name under /api/files/ (screenshot jpg or voice m4a), else null. Screenshots also have /api/thumb/{file}, 640px wide
+file: name under /api/files/ (screenshot jpg or voice m4a), else null. Screenshots also have /api/thumb/{file}, 640px wide.
+      A screenshot past screenshot_days has file null and keeps its OCR text and meta
 app:  "App: window title" of the app the user was in. For MCP saves: "<agent name>: <project folder name>"
 meta: JSON object or null. Every save sets meta.source: hotbar | app (main window) | cli | mcp.
       The CLI also sets cwd. MCP saves set {source: "mcp", agent, agent_version, cwd, session}: the client name and version
       from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
       Enriched links set {link: {site, title, author, text}, icon}, see "Link enrichment". A link that was refused or could not
       be read gets {tried: 1} instead.
+      meta.url is the page or document the user was on, when Swift could read it over Accessibility (see /api/context)
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0&source=&agent=&project=&session=&mode=hybrid -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
@@ -66,7 +68,9 @@ GET    /api/origins?profile=                             -> [{source, agent, cwd
 GET    /api/icon?app=                                    -> png      the icon of the installed app with that name (the part before ":"),
                                                                     64px, cached in data/files/icons/app-<name>.png. 404 when no app has the name
 POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok. Max 100,000 characters, else 422.
-                                                                    Only an absolute path or one starting with ~/ is kind path
+                                                                    Only an absolute path or one starting with ~/ is kind path.
+                                                                    The same text, kind and profile saved in the last 10 seconds returns that id
+                                                                    and saves nothing, so a double Enter saves once
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile. Same 100,000 limit.
                                                                     A new text on a link drops its fetched title and icon and looks it up again
 DELETE /api/items/{id}                                   -> {}       also deletes the file
@@ -75,14 +79,21 @@ POST   /api/capture    {app?, meta?, display?, area?, profile?} -> {id}  screens
                                                                     which usually means Screen Recording is not allowed for umm
                                                                     display: 1-based number for screencapture -D, default main display
                                                                     area: true runs the interactive selection. Esc returns {id: null} and saves nothing
-                                                                    meta defaults to {source: "hotbar"}, since only the hotbar captures without one
+                                                                    meta defaults to {source: "hotbar"}, since only the hotbar captures without one.
+                                                                    An image byte for byte equal to a screenshot saved in the same profile in the
+                                                                    last 10 minutes returns that id and saves nothing. Same for /api/clipboard and /api/import
+POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an image file (png, jpeg, heic, gif, tiff, webp, read by content with sips -g format,
+                                                                    not by extension) is converted to jpg and saved as a screenshot with OCR and a thumbnail.
+                                                                    Anything else, folders too, becomes a path item. 400 when path is not an absolute path
+                                                                    that exists (~/ is expanded). meta defaults to {source: "app"}, since the main window drops files
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
                                                                     clipboard is marked secret (see /api/context)
-GET    /api/context                                      -> {app, profile, clipboard_kind, clipboard, recording}
+GET    /api/context?url=                                 -> {app, profile, clipboard_kind, clipboard, recording, url}
                                                                     clipboard_kind: text | image | files | null. clipboard is the text, or the
                                                                     copied paths one per line, empty for an image. Max 2000 chars. Clipboard content marked
-                                                                    org.nspasteboard.ConcealedType or TransientType (password managers) is treated as empty
+                                                                    org.nspasteboard.ConcealedType or TransientType (password managers) is treated as empty.
+                                                                    url is the query parameter echoed back, else null. Swift sends it, see "Page URL"
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new. Names are 1 to 60 characters, no `*`, `/` or newline
 POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent. 409 when `to` exists
@@ -95,6 +106,10 @@ POST   /api/record/start {app?, meta?}                          -> same as GET /
 POST   /api/record/stop                                  -> same, transcription runs in background and the voice item appears when done
 POST   /api/copy       {text}                            -> {}       puts text on the clipboard
 POST   /api/reveal     {text}                            -> {}       reveals a path in Finder
+POST   /api/copy-image {id}                              -> {}       puts a screenshot's image on the clipboard as PNG (macOS adds TIFF for apps that ask).
+                                                                    404 for an unknown id, an item that is not a screenshot, or one without its image file
+POST   /api/open       {id, reveal?}                     -> {}       opens the item's file in its default app (Preview for screenshots), or with
+                                                                    reveal: true shows it in Finder. A path item's file is its path. 404 when there is no file
 GET    /api/agents                                       -> [{agent, agent_version, cwd, session, pid, started, last_seen, connected, memories}]
          connected MCP servers. Each writes data/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
          memories = items with that session. Sorted by last_seen, files of dead pids are removed after 30 days.
@@ -107,12 +122,14 @@ GET    /api/thumb/{name}                                 -> jpg      thumbnail o
 Settings live in `data/settings.json`. The defaults are the `Settings` model in `backend/settings.py`, the only place they are written. `settings.get()` reads the file on every call, so `record.py` and `api.py` pick up a change without a restart.
 
 ```
-Settings = {languages, model, enrich_links, excluded_apps}
+Settings = {languages, model, enrich_links, excluded_apps, screenshot_days}
 languages:      language codes Whisper may detect, default ["en", "hi"]. [] allows any language
 model:          "small" | "medium", default "medium"
 enrich_links:   default true, fetch title and description of saved links (not links with a secret looking query parameter)
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
+screenshot_days: default 0 (keep forever). A background thread runs at backend start and every 24 hours. It deletes the image
+                and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay
 ```
 
 ## Link enrichment
@@ -150,21 +167,34 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "openExternal", url}        open in the default browser
 {type: "settings"}                 ask for the login item state, Swift replies with window.ummSettings
 {type: "loginItem", on}            register or unregister umm as a login item (SMAppService.mainApp), then replies like "settings"
+{type: "accessibility"}            ask macOS for Accessibility (AXIsProcessTrustedWithOptions with the prompt), open its pane in
+                                   System Settings, then reply like "settings". The grant happens later, so ask "settings" again on focus
 {type: "quit"}                     kill switch, quits the app and the backend
 ```
 
 Swift to UI:
 
 ```
-window.ummShow?.(context)   called every time the hotbar opens. context is GET /api/context, fetched by Swift
+window.ummShow?.(context)   called every time the hotbar opens. context is GET /api/context?url=, fetched by Swift
                             BEFORE umm takes focus so `app` is the user's app. If the request fails, Swift tries once more before it passes `{}`. UI resets, focuses the input.
                             In browser dev the UI calls this itself on load with a fetched context.
 window.ummOpen?.({query})   main window shown, optional search query
-window.ummSettings?.({loginItem, version})
+window.ummDrop?.({paths})   files dropped on the main window, absolute paths. Swift takes the drop so WebKit does not open the file.
+                            The UI posts each path to /api/import. Dropped text is not intercepted and reaches the page as a normal drop
+window.ummSettings?.({loginItem, version, accessibility})
                             reply to "settings" and "loginItem". loginItem is on | approval | off | missing.
                             approval means macOS wants the person to allow it in System Settings, Login Items.
-                            version is CFBundleShortVersionString. Browser dev never calls it and the UI hides the startup row.
+                            version is CFBundleShortVersionString. accessibility is AXIsProcessTrusted().
+                            Browser dev never calls it and the UI hides the startup row.
 ```
+
+## Page URL
+
+When umm has the Accessibility permission, Swift reads the front app over the generic AX API as the hotbar opens, before it fetches the context. It takes the focused window's `AXDocument` (a file URL in editors, the page URL in Chrome). If that is empty, it walks up from the focused element to an `AXWebArea` and takes its `AXURL`. No per-app code. It sends the result as `GET /api/context?url=`, so `context.url` holds it. Swift adds it to the hotbar screenshot as `meta = {source: "hotbar", url}`, and the UI adds `meta.url` to notes and clipboard saves from the hotbar. Each AX call waits at most 0.5 seconds. Firefox shows no web area unless an assistive app is running, so it gets no URL. Without the permission, `url` is null and nothing else changes.
+
+## OCR languages
+
+Apple Vision (VNRecognizeTextRequest, revision 3) on macOS 26 lists 30 OCR languages and no Indic one, so Devanagari in a screenshot is not read and `languages` stays a Whisper setting.
 
 ## Hotbar
 

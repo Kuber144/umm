@@ -36,6 +36,7 @@ The first run installs the dependencies and builds `build/umm.app`, which takes 
 
 - Screen Recording lets umm take screenshots and read the front window's title. Without it a screenshot fails, and the menu bar shows "Allow Screen Recording" for a moment.
 - Microphone lets umm record your voice when you start a recording.
+- Accessibility is optional. With it, a save from the hotbar also records the web page or document you were on (`meta.url`). Turn it on in Settings.
 
 umm never uses either one on its own. A screenshot happens when you ask for it, and the mic is on only during a recording.
 
@@ -64,7 +65,8 @@ The main window opens from the hotbar or the menu bar icon, which turns red whil
 - Write a note or record your voice at the top. `Cmd+Enter` saves.
 - Move with Up, Down, `j` and `k`. `Enter` copies or opens, `Delete` removes.
 - Each item can be copied, edited, moved to another profile, deleted, or revealed in Finder when it is a path.
-- `Cmd+,` opens Settings: the profile for hotkey saves, voice languages and model, apps the hotbar screenshot refuses to capture, link lookup, storage, and open at login.
+- Drop files on the main window to save them. Images become screenshots with OCR, other files become paths.
+- `Cmd+,` opens Settings: the profile for hotkey saves, voice languages and model, apps the hotbar screenshot refuses to capture, link lookup, storage, how many days to keep screenshot images (their text stays), and open at login.
 
 Every item belongs to one profile, and new saves go to the active one.
 
@@ -109,6 +111,7 @@ The CLI talks to the running app.
 umm add "text"            # save text, paths and links are detected
 pbpaste | umm add         # save stdin
 umm shot                  # screenshot with OCR
+umm import ~/a.png        # save a file, images get OCR
 umm find invoice          # search, also: umm s invoice
 umm ls -k link -n 5       # recent items
 umm show 42               # print one item
