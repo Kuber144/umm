@@ -53,13 +53,18 @@ meta: JSON object or null. Every save sets meta.source: hotbar | app (main windo
       Enriched links set {link: {site, title, author, text}, icon}, see "Link enrichment". A link that was refused or could not
       be read gets {tried: 1} instead.
 
-GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0&mode=hybrid -> [Item]
+GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0&source=&agent=&project=&session=&mode=hybrid -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
          app filters by app name (the part before ":"). since/until are YYYY-MM-DD or YYYY-MM-DD HH:MM (local time), inclusive.
+         source, agent and session match those meta keys. project matches meta.cwd, that folder or any folder under it.
          sort: new | old | relevance. Default is relevance when q is set, else new. limit is capped at 200.
          mode: hybrid | keyword. With q, hybrid fuses keyword matches with meaning matches (docs/semantic-search.md).
          Without the model it is keywords only.
 GET    /api/apps?profile=                                -> [{app, count}]   app names for the filter, most used first
+GET    /api/origins?profile=                             -> [{source, agent, cwd, count}]   items per meta source, agent and folder,
+                                                                    most first, for the source, agent and project filters
+GET    /api/icon?app=                                    -> png      the icon of the installed app with that name (the part before ":"),
+                                                                    64px, cached in data/files/icons/app-<name>.png. 404 when no app has the name
 POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok. Max 100,000 characters, else 422.
                                                                     Only an absolute path or one starting with ~/ is kind path
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile. Same 100,000 limit.
@@ -70,6 +75,7 @@ POST   /api/capture    {app?, meta?, display?, area?, profile?} -> {id}  screens
                                                                     which usually means Screen Recording is not allowed for umm
                                                                     display: 1-based number for screencapture -D, default main display
                                                                     area: true runs the interactive selection. Esc returns {id: null} and saves nothing
+                                                                    meta defaults to {source: "hotbar"}, since only the hotbar captures without one
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
                                                                     clipboard is marked secret (see /api/context)
@@ -92,6 +98,8 @@ POST   /api/reveal     {text}                            -> {}       reveals a p
 GET    /api/agents                                       -> [{agent, agent_version, cwd, session, pid, started, last_seen, connected, memories}]
          connected MCP servers. Each writes data/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
          memories = items with that session. Sorted by last_seen, files of dead pids are removed after 30 days.
+GET    /api/setup                                        -> {mcp, cli}   the commands that connect Claude Code and install the CLI,
+                                                                    with this checkout's path
 GET    /api/files/{name}                                 -> file
 GET    /api/thumb/{name}                                 -> jpg      thumbnail of a screenshot, made on first request for old ones
 ```
@@ -170,7 +178,17 @@ Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot 
 6. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes
 7. Switch profile
 8. Open umm (main window)
-9. Quit umm
+9. Quit umm. While recording, the first `Enter` asks again
+
+While typing, `Enter` runs a row only when the query starts its label ("scr" takes a screenshot). Otherwise it copies the first matching memory, or searches. `Enter` while an input method is composing does nothing, and the arrow keys stop at the ends. A half-written note stays when the hotbar closes.
+
+## Main window
+
+The sidebar lists profiles, then All profiles, Connections and Settings. Clicking a profile only browses it. The active profile, where hotkey saves go, changes in Settings, the hotbar "Switch profile" row, or by creating a profile. A note written in the main window goes to the profile on screen.
+
+Each row shows the app's icon (`/api/icon`), a link's site icon, or a monogram for agents and apps that are not installed. A small glyph marks items saved from the CLI or the main window. Agent memories show the agent and project folder. The agent profile has chips to narrow by agent and project, and Filter has app, source, agent, project and dates.
+
+Connections lists `GET /api/agents`: connected agents with a live dot, then recent sessions, each with its project folder, last seen and memory count. Clicking one shows that session's memories across all profiles. It refreshes every 5 seconds and shows the MCP setup command.
 
 ## Settings view
 

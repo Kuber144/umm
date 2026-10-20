@@ -209,9 +209,9 @@ APP = "substr(app, 1, instr(app || ':', ':') - 1)"  # app name is the part befor
 
 @locked
 def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=None, until=None, sort=None,
-           agent=None, project=None, mode="hybrid"):
+           agent=None, project=None, source=None, session=None, mode="hybrid"):
     """profile None or '*' searches every profile. kind is comma separated. since/until are YYYY-MM-DD or YYYY-MM-DD HH:MM, inclusive.
-    agent matches meta.agent. project matches meta.cwd, that folder or any folder under it.
+    agent, source and session match those meta keys. project matches meta.cwd, that folder or any folder under it.
     With q, mode "hybrid" fuses keyword and cosine ranks. "keyword", or a missing model, is keywords only."""
     where, args = [], []
     match = fts(q)
@@ -224,9 +224,10 @@ def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=No
         if val:
             where.append(cond)
             args.append(val)
-    if agent:
-        where.append("json_extract(meta, '$.agent') = ?")
-        args.append(agent)
+    for key, val in [("agent", agent), ("source", source), ("session", session)]:
+        if val:
+            where.append(f"json_extract(meta, '$.{key}') = ?")
+            args.append(val)
     if project:
         project = project.rstrip("/") or "/"
         where.append("(json_extract(meta, '$.cwd') = ? OR substr(json_extract(meta, '$.cwd'), 1, length(?) + 1) = ? || '/')")
@@ -270,6 +271,15 @@ def apps(profile=None):
     where = "WHERE profile = ?" if profile and profile != "*" else ""
     sql = f"SELECT {APP} AS a, count(*) AS n FROM items {where} GROUP BY a HAVING a != '' ORDER BY n DESC, a"
     return [{"app": a, "count": n} for a, n in db.execute(sql, (profile,) if where else ())]
+
+
+@locked
+def origins(profile=None):
+    """Where items came from: count per (source, agent, cwd), for the source, agent and project filters."""
+    where = "WHERE profile = ?" if profile and profile != "*" else ""
+    sql = (f"SELECT json_extract(meta, '$.source') AS source, json_extract(meta, '$.agent') AS agent, "
+           f"json_extract(meta, '$.cwd') AS cwd, count(*) AS count FROM items {where} GROUP BY 1, 2, 3 ORDER BY count DESC")
+    return [dict(r) for r in db.execute(sql, (profile,) if where else ())]
 
 
 @locked

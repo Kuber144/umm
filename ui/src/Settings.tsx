@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, type Profiles, type Settings as Conf, type Storage } from './api'
 import { native, send } from './bridge'
-import { Dot, Icon, Kbd } from './ui'
+import { Cmd, Dot, Icon, Kbd } from './ui'
 import './settings.css'
 
 const LANGS: [string, string][] = [['en', 'English'], ['hi', 'Hindi'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ar', 'Arabic'], ['zh', 'Chinese'], ['ja', 'Japanese'], ['ru', 'Russian']]
@@ -16,21 +16,17 @@ const Switch = ({ on, set, label }: { on: boolean; set: (v: boolean) => void; la
   <button role="switch" aria-checked={on} aria-label={label} className={'switch' + (on ? ' on' : '')} onClick={() => set(!on)}><i /></button>
 )
 
-function Cmd({ text }: { text: string }) {
-  const [done, setDone] = useState(false)
-  const copy = () => api.copy(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500) }, () => {})
-  return <div className="cmd"><code>{text}</code><button className="btn" onClick={copy}><Icon name="copy" />{done ? 'Copied' : 'Copy'}</button></div>
-}
-
 export default function Settings({ profiles, onActive }: { profiles: Profiles; onActive: (name: string) => void }) {
   const [s, setS] = useState<Conf | null>(null)
   const [store, setStore] = useState<Storage | null>(null)
   const [login, setLogin] = useState<{ loginItem?: string; version?: string }>({})
   const [err, setErr] = useState(false)
+  const [setup, setSetup] = useState<{ mcp: string; cli: string } | null>(null)
 
   useEffect(() => {
     api.settings().then(setS, () => setErr(true))
     api.storage().then(setStore, () => {})
+    api.setup().then(setSetup, () => {})
     if (native) { window.ummSettings = setLogin; send({ type: 'settings' }) }
     return () => { window.ummSettings = undefined }
   }, [])
@@ -44,7 +40,6 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
     const name = v.trim()
     if (name && s && !s.excluded_apps.some(a => a.toLowerCase() === name.toLowerCase())) patch({ excluded_apps: [...s.excluded_apps, name] })
   }
-  const root = store?.path.replace(/\/data$/, '') ?? '<repo>'
   const names = profiles.all.map(p => p.name)
   const loginOn = login.loginItem === 'on' || login.loginItem === 'approval'
 
@@ -110,8 +105,8 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
 
         <section>
           <h2>Agents</h2>
-          <Row label="Claude Code" hint="Run once. Any MCP client can use the same command."><Cmd text={`claude mcp add umm -s user -- uv run --project ${root}/backend ${root}/backend/mcp_server.py`} /></Row>
-          <Row label="Command line" hint="Installs the umm command."><Cmd text={`uv tool install --editable ${root}/cli`} /></Row>
+          <Row label="Claude Code" hint="Run once. Any MCP client can use the same command. Connected agents are listed under Connections.">{setup && <Cmd text={setup.mcp} copy={api.copy} />}</Row>
+          <Row label="Command line" hint="Installs the umm command.">{setup && <Cmd text={setup.cli} copy={api.copy} />}</Row>
         </section>
 
         {native && <section>
