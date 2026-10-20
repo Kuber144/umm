@@ -1,13 +1,39 @@
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-body { margin: 0; }
-main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
-header { display: flex; gap: 8px; margin-bottom: 8px; }
-header input { flex: 1; }
-input, select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #8884; background: transparent; color: inherit; }
-ul { list-style: none; padding: 0; }
-li { border: 1px solid #8883; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
-.meta { display: flex; justify-content: space-between; font-size: 12px; opacity: .6; }
-.meta button { padding: 0 6px; font-size: 12px; cursor: pointer; }
-img { max-width: 100%; border-radius: 6px; margin-top: 8px; }
-p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; }
-code { cursor: pointer; }
+:root {
+  color-scheme: light dark;
+  --bg: #f7f8f9; --side: #eceef0; --surface: #fff; --field: #eef0f2;
+  --ink: #1a1d22; --ink-2: #565d68; --ink-3: #8a919c;
+  --line: rgba(24, 32, 44, .1); --line-strong: rgba(24, 32, 44, .18);
+  --accent: #0c7a69; --on-accent: #fff; --agent: #c4741a; --danger: #c8382e;
+  --sel: color-mix(in srgb, var(--accent) 9%, transparent);
+  --mark: #ffe58a;
+  --font: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --round: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191c; --side: #1e2125; --surface: #1f2226; --field: #262a2f;
+    --ink: #e9ebee; --ink-2: #a5abb4; --ink-3: #747b86;
+    --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .16);
+    --accent: #43c4a8; --on-accent: #08241d; --agent: #e9a24d; --danger: #f06b60;
+    --sel: color-mix(in srgb, var(--accent) 12%, transparent);
+    --mark: #5d4d0f;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+html[data-view=hotbar], html[data-view=hotbar] body { background: transparent; }
+body { overflow: hidden; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:focus-visible, textarea:focus-visible { outline: none; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; }
+.dim { color: var(--ink-3); }
+.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.dot { vertical-align: middle; width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; margin-right: 6px; }
+kbd { font: 500 11px/1 var(--font); color: var(--ink-3); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; margin-left: 4px; white-space: nowrap; }
+.recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); display: inline-block; flex: none; }
+@keyframes pulse { 50% { opacity: .25; } }
+.on .recdot { animation: pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
