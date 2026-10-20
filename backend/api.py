@@ -296,9 +296,10 @@ def import_file(i: Import):
     if not p.is_absolute() or not p.exists():
         raise HTTPException(400, f"no file at {i.path}")
     meta = i.meta or {"source": "app"}  # files are dropped on the main window
-    if p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition(" ")[2] in IMAGES:
-        name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
-        subprocess.run(["sips", "-s", "format", "jpeg", str(p), "--out", str(db.FILES / name)], capture_output=True, check=True)
+    name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
+    # sips prints only the path for a non-image, so "a png" must not count. An unreadable or broken image is saved as a path
+    if (p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition("format: ")[2] in IMAGES
+            and subprocess.run(["sips", "-s", "format", "jpeg", str(p), "--out", str(db.FILES / name)], capture_output=True).returncode == 0):
         return {"id": save_shot(name, i.app, meta, i.profile)}
     return {"id": db.add(str(p), "path", app=i.app, profile=i.profile, meta=meta)}
 

@@ -94,7 +94,7 @@ POST   /api/capture    {app?, meta?, display?, area?, profile?} -> {id}  screens
                                                                     last 10 minutes returns that id and saves nothing. Same for /api/clipboard and /api/import
 POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an image file (png, jpeg, heic, gif, tiff, webp, read by content with sips -g format,
                                                                     not by extension) is converted to jpg and saved as a screenshot with OCR and a thumbnail.
-                                                                    Anything else, folders too, becomes a path item. 400 when path is not an absolute path
+                                                                    Anything else becomes a path item: folders, and images that are unreadable or broken. 400 when path is not an absolute path
                                                                     that exists (~/ is expanded). meta defaults to {source: "app"}, since the main window drops files
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
