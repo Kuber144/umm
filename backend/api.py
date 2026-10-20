@@ -1,13 +1,14 @@
 import re
 import subprocess
-import time
+from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 
 import objc
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from ocrmac.ocrmac import OCR
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
 from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly
 
 import db
@@ -15,15 +16,20 @@ import record
 
 app = FastAPI()
 
+Nonempty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# "*" means all profiles in GET /api/items, so it can't be a profile name
+ProfileName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, pattern=r"^[^*]+$")]
+
 
 class Item(BaseModel):
-    content: str
+    content: Nonempty
     app: str | None = None
     profile: str | None = None
 
 
 class Edit(BaseModel):
-    content: str
+    content: Nonempty | None = None
+    profile: ProfileName | None = None
 
 
 class Text(BaseModel):
@@ -35,7 +41,12 @@ class App(BaseModel):
 
 
 class Profile(BaseModel):
-    name: str
+    name: ProfileName
+
+
+class Rename(BaseModel):
+    from_: Nonempty = Field(alias="from")
+    to: ProfileName
 
 
 def run(cmd, shell=False, input=None):
@@ -53,18 +64,24 @@ def front_window():
 
 
 @app.get("/api/items")
-def items(q: str = "", profile: str = "", kind: str = "", limit: int = 50, offset: int = 0):
-    return db.search(q, profile or db.active_profile(), kind or None, min(limit, 200), offset)
+def items(q: str = "", profile: str = "", kind: str = "", app: str = "", since: str = "", until: str = "",
+          sort: str = "", limit: int = 50, offset: int = 0):
+    return db.search(q, profile or db.active_profile(), kind, max(0, min(limit, 200)), offset, app, since, until, sort)
+
+
+@app.get("/api/apps")
+def apps(profile: str = ""):
+    return db.apps(profile or db.active_profile())
 
 
 @app.post("/api/items")
 def add(item: Item):
-    return {"id": db.add(item.content.strip(), app=item.app, profile=item.profile)}
+    return {"id": db.add(item.content, app=item.app, profile=item.profile)}
 
 
 @app.patch("/api/items/{id}")
 def edit(id: int, e: Edit):
-    db.update(id, e.content.strip())
+    db.update(id, e.content, e.profile)
     return {}
 
 
@@ -83,8 +100,8 @@ def context():
 @app.post("/api/capture")
 def capture(a: App | None = None):
     app_name = (a and a.app) or front_window()
-    # jpg is ~9x smaller than png and OCR reads the same text
-    name = time.strftime("%Y%m%d-%H%M%S") + ".jpg"
+    # jpg is ~9x smaller than png and OCR reads the same text. Microseconds keep parallel captures from sharing a file.
+    name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
     subprocess.run(["screencapture", "-x", "-t", "jpg", str(db.FILES / name)], check=True)
     # worker threads have no autorelease pool, so Vision objects would leak without one
     with objc.autorelease_pool():
@@ -99,7 +116,26 @@ def profiles():
 
 @app.post("/api/profiles")
 def set_profile(p: Profile):
-    db.set_profile(p.name.strip())
+    db.set_profile(p.name)
+    return {}
+
+
+def custom(*names):
+    if set(names) & set(db.BUILTIN):
+        raise HTTPException(400, "user and agent can't be renamed or deleted")
+
+
+@app.post("/api/profiles/rename")
+def rename_profile(r: Rename):
+    custom(r.from_, r.to)
+    db.rename_profile(r.from_, r.to)
+    return {}
+
+
+@app.delete("/api/profiles/{name}")
+def delete_profile(name: str):
+    custom(name)
+    db.delete_profile(name)
     return {}
 
 
