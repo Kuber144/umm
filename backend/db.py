@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 import sqlite3
@@ -10,16 +11,32 @@ import numpy as np
 import embed
 import link
 
+os.umask(0o077)  # data/ is private to the user
 DATA = Path(__file__).resolve().parent.parent / "data"
 FILES = DATA / "files"
 FILES.mkdir(parents=True, exist_ok=True)
+DATA.chmod(0o700)
+MAX_CONTENT = 100_000  # characters
 PROFILE = DATA / "profile.txt"
 EXTRA = DATA / "profiles.txt"  # created profiles, one per line, so empty ones persist
 BUILTIN = ["user", "agent"]
 
-# sqlite3.threadsafety is 3 (serialized), so one connection is shared by API threads and the transcriber
+# one connection is shared by API threads and the transcriber, so every function below runs under this lock
+lock = threading.RLock()
+
+
+def locked(f):
+    @functools.wraps(f)
+    def run(*a, **k):
+        with lock:
+            return f(*a, **k)
+    return run
+
+
 db = sqlite3.connect(DATA / "umm.db", check_same_thread=False)
 db.row_factory = sqlite3.Row
+db.execute("PRAGMA journal_mode=WAL")  # MCP servers write from other processes
+db.execute("PRAGMA busy_timeout=5000")
 SCHEMA = "profile UNINDEXED, kind UNINDEXED, content, file UNINDEXED, app, meta UNINDEXED, created_at UNINDEXED, vec UNINDEXED"
 if db.execute("SELECT 1 FROM pragma_table_info('items') WHERE name = 'vec'").fetchone() is None:
     old = [c for (c,) in db.execute("SELECT name FROM pragma_table_info('items')")]
@@ -57,12 +74,14 @@ def set_profile(name):
         EXTRA.write_text("\n".join([*extra(), name]).strip())
 
 
+@locked
 def profiles():
     counts = dict(db.execute("SELECT profile, count(*) FROM items GROUP BY profile").fetchall())
     names = BUILTIN + sorted((set(counts) | set(extra()) | {active_profile()}) - set(BUILTIN) - {""})
     return [{"name": n, "count": counts.get(n, 0)} for n in names]
 
 
+@locked
 def rename_profile(old, new):
     db.execute("UPDATE items SET profile = ? WHERE profile = ?", (new, old))
     db.commit()
@@ -71,6 +90,7 @@ def rename_profile(old, new):
         PROFILE.write_text(new)
 
 
+@locked
 def delete_profile(name):
     for (id,) in db.execute("SELECT rowid FROM items WHERE profile = ?", (name,)).fetchall():
         delete(id)
@@ -82,11 +102,12 @@ def delete_profile(name):
 def detect(content):
     if content.startswith(("http://", "https://")):
         return "link"
-    if "\n" not in content and os.path.exists(os.path.expanduser(content)):
+    if "\n" not in content and content.startswith(("/", "~/")) and os.path.exists(os.path.expanduser(content)):
         return "path"
     return "text"
 
 
+@locked
 def add(content, kind=None, file=None, app=None, profile=None, meta=None):
     cur = db.execute("INSERT INTO items(profile, kind, content, file, app, meta, created_at) "
                      "VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
@@ -94,7 +115,7 @@ def add(content, kind=None, file=None, app=None, profile=None, meta=None):
                       json.dumps(meta) if meta else None))
     db.commit()
     if cur.lastrowid and (kind or detect(content)) == "link":
-        threading.Thread(target=enrich, args=(cur.lastrowid, content.split()[0]), daemon=True).start()
+        enrich_later(cur.lastrowid, content)
     embed_later()
     return cur.lastrowid
 
@@ -104,35 +125,52 @@ def enrich_on():
     return settings.get()["enrich_links"]
 
 
+def enrich_later(id, content):
+    threading.Thread(target=enrich, args=(id, content.split()[0]), daemon=True).start()
+
+
+# links not looked up yet. meta.tried marks a failed or refused attempt, so backfill does not retry it at every launch
+TODO = "kind = 'link' AND json_extract(meta, '$.link') IS NULL AND json_extract(meta, '$.tried') IS NULL"
+
+
 def enrich(id, url):
     """Fetch title and text for a saved link. Puts them in meta.link and appends them to content so FTS finds them."""
-    info = enrich_on() and link.fetch(url, FILES / "icons")
-    if info:
-        icon = info.pop("icon")  # meta.icon is a file name under /api/files/, shared by every link on that host
-        db.execute("UPDATE items SET content = content || ?, vec = NULL, "
-                   "meta = json_set(coalesce(meta, '{}'), '$.link', json(?), '$.icon', ?) "
-                   "WHERE rowid = ? AND kind = 'link' AND json_extract(meta, '$.link') IS NULL",
-                   ("\n" + "\n".join(info.values()), json.dumps(info), icon, id))
+    if not enrich_on():
+        return
+    info = link.fetch(url, FILES / "icons")
+    with lock:
+        if info:
+            icon = info.pop("icon")  # meta.icon is a file name under /api/files/, shared by every link on that host
+            db.execute("UPDATE items SET content = content || ?, vec = NULL, "
+                       f"meta = json_set(coalesce(meta, '{{}}'), '$.link', json(?), '$.icon', ?) WHERE rowid = ? AND {TODO}",
+                       ("\n" + "\n".join(info.values()), json.dumps(info), icon, id))
+        else:
+            db.execute(f"UPDATE items SET meta = json_set(coalesce(meta, '{{}}'), '$.tried', 1) WHERE rowid = ? AND {TODO}", (id,))
         db.commit()
+    if info:
         embed_later()
 
 
 def backfill(delay=1):
     """Enrich links saved before enrichment existed. One per second, newest first."""
-    for id, content in db.execute("SELECT rowid, content FROM items WHERE kind = 'link' AND json_extract(meta, '$.link') IS NULL "
-                                  "ORDER BY rowid DESC").fetchall() if enrich_on() else []:
+    with lock:
+        todo = db.execute(f"SELECT rowid, content FROM items WHERE {TODO} ORDER BY rowid DESC").fetchall() if enrich_on() else []
+    for id, content in todo:
         enrich(id, content.split()[0])
         time.sleep(delay)
 
 
+@locked
 def update(id, content=None, profile=None):
-    if content is not None:
-        db.execute("UPDATE items SET content = ?, kind = ?, vec = NULL WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')",
-                   (content, detect(content), id))
+    if content is not None:  # a new text drops what was fetched for the old link
+        db.execute("UPDATE items SET content = ?, kind = ?, vec = NULL, meta = json_remove(meta, '$.link', '$.icon', '$.tried') "
+                   "WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')", (content, detect(content), id))
         db.execute("UPDATE items SET content = ?, vec = NULL WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
     if profile:
         db.execute("UPDATE items SET profile = ? WHERE rowid = ?", (profile, id))
     db.commit()
+    if content is not None and (r := get(id)) and r["kind"] == "link":
+        enrich_later(id, content)
     embed_later()
 
 
@@ -142,17 +180,25 @@ embedding = threading.Lock()
 def embed_pending():
     """Embeds every item without a vector, 4 at a time to keep the model's peak memory down."""
     with embedding:
-        while rows := db.execute("SELECT rowid, content FROM items WHERE vec IS NULL LIMIT 4").fetchall():
-            vecs = embed.embed([c for _, c in rows])
-            if vecs is None:  # no model, items stay keyword only
+        while True:
+            with lock:
+                rows = db.execute("SELECT rowid, content FROM items WHERE vec IS NULL LIMIT 4").fetchall()
+            vecs = rows and embed.embed([c for _, c in rows])  # outside the lock, the model is slow
+            if not vecs:  # nothing left, or no model and the items stay keyword only
                 return
-            for (id, c), v in zip(rows, vecs):
-                db.execute("UPDATE items SET vec = ? WHERE rowid = ? AND content = ?", (v, id, c))  # skips an item edited meanwhile
-            db.commit()
+            with lock:
+                for (id, c), v in zip(rows, vecs):
+                    db.execute("UPDATE items SET vec = ? WHERE rowid = ? AND content = ?", (v, id, c))  # skips an item edited meanwhile
+                db.commit()
 
 
 def embed_later():
     threading.Thread(target=embed_pending, daemon=True).start()
+
+
+def fts(q):
+    """FTS5 match string. Each word is quoted so paths like ~/a/b don't break the syntax, * gives prefix match."""
+    return " ".join(f'"{w}"*' for w in q.replace('"', "").replace("\0", "").split())
 
 
 RRF = 60  # reciprocal rank fusion constant
@@ -161,19 +207,20 @@ SEM_TOP, SEM_MIN, SEM_GAP = 20, 0.8, 0.06
 APP = "substr(app, 1, instr(app || ':', ':') - 1)"  # app name is the part before ':'
 
 
+@locked
 def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=None, until=None, sort=None,
            agent=None, project=None, mode="hybrid"):
-    """profile None or '*' searches every profile. kind is comma separated. since/until are YYYY-MM-DD.
+    """profile None or '*' searches every profile. kind is comma separated. since/until are YYYY-MM-DD or YYYY-MM-DD HH:MM, inclusive.
     agent matches meta.agent. project matches meta.cwd, that folder or any folder under it.
     With q, mode "hybrid" fuses keyword and cosine ranks. "keyword", or a missing model, is keywords only."""
     where, args = [], []
-    words = q.replace('"', "").split()
-    if words:
-        # quote each word so paths like ~/a/b don't break FTS syntax, * gives prefix match
+    match = fts(q)
+    if match:
         where.append("items MATCH ?")
-        args.append(" ".join(f'"{w}"*' for w in words))
+        args.append(match)
+    # created_at is "YYYY-MM-DD HH:MM:SS", so until + "z" sorts after every time within the given day or minute
     for cond, val in [("profile = ?", profile if profile != "*" else None), (f"{APP} = ?", app),
-                      ("date(created_at) >= ?", since), ("date(created_at) <= ?", until)]:
+                      ("created_at >= ?", since), ("created_at <= ? || 'z'", until)]:
         if val:
             where.append(cond)
             args.append(val)
@@ -188,7 +235,7 @@ def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=No
         where.append(f"kind IN ({','.join('?' * len(kind.split(',')))})")
         args += kind.split(",")
     clause = lambda w: f"WHERE {' AND '.join(w)}" if w else ""
-    if words and mode != "keyword" and (qv := embed.embed([q], query=True)):
+    if match and mode != "keyword" and (qv := embed.embed([q], query=True)):
         # hybrid: reciprocal rank fusion of keyword order and cosine order, same filters on both
         score = {id: 1 / (RRF + n) for n, (id,) in enumerate(db.execute(f"SELECT rowid FROM items {clause(where)} ORDER BY rank", args))}
         vecs = db.execute(f"SELECT rowid, vec FROM items {clause(where[1:] + ['vec IS NOT NULL'])}", args[1:]).fetchall()
@@ -199,17 +246,33 @@ def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=No
         ids = sorted(score, key={"old": lambda i: i, "new": lambda i: -i}.get(sort, lambda i: (-score[i], -i)))[offset:offset + limit]
         found = {r["id"]: row(r) for r in db.execute(f"SELECT {COLS} FROM items WHERE rowid IN ({','.join('?' * len(ids))})", ids)}
         return [found[i] for i in ids]
-    order = {"old": "rowid", "new": "rowid DESC"}.get(sort) or ("rank, rowid DESC" if words else "rowid DESC")
+    order = {"old": "rowid", "new": "rowid DESC"}.get(sort) or ("rank, rowid DESC" if match else "rowid DESC")
     sql = f"SELECT {COLS} FROM items {clause(where)} ORDER BY {order} LIMIT ? OFFSET ?"
     return [row(r) for r in db.execute(sql, (*args, limit, offset))]
 
 
+@locked
+def snippets(q, ids):
+    """{id: text around the first keyword match} for the items in ids that match q."""
+    if not (match := fts(q)) or not ids:
+        return {}
+    return dict(db.execute(f"SELECT rowid, snippet(items, 2, '', '', ' ... ', 40) FROM items WHERE items MATCH ? "
+                           f"AND rowid IN ({','.join('?' * len(ids))})", (match, *ids)))
+
+
+@locked
+def has_file(name):
+    return db.execute("SELECT 1 FROM items WHERE file = ?", (name,)).fetchone() is not None
+
+
+@locked
 def apps(profile=None):
     where = "WHERE profile = ?" if profile and profile != "*" else ""
     sql = f"SELECT {APP} AS a, count(*) AS n FROM items {where} GROUP BY a HAVING a != '' ORDER BY n DESC, a"
     return [{"app": a, "count": n} for a, n in db.execute(sql, (profile,) if where else ())]
 
 
+@locked
 def kinds():
     return dict(db.execute("SELECT kind, count(*) FROM items GROUP BY kind").fetchall())
 
@@ -218,6 +281,7 @@ def thumb(name):
     return FILES / (Path(name).stem + ".thumb.jpg")
 
 
+@locked
 def delete(id):
     row = db.execute("SELECT file FROM items WHERE rowid = ?", (id,)).fetchone()
     if row and row[0]:
@@ -227,11 +291,13 @@ def delete(id):
     db.commit()
 
 
+@locked
 def get(id):
     r = db.execute(f"SELECT {COLS} FROM items WHERE rowid = ?", (id,)).fetchone()
     return row(r) if r else None
 
 
+@locked
 def agents():
     """Connected MCP servers, from the files they write to data/agents. Dead ones are dropped after 30 days."""
     counts = dict(db.execute("SELECT json_extract(meta, '$.session'), count(*) FROM items GROUP BY 1").fetchall())

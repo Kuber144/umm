@@ -1,3 +1,4 @@
+import os
 import queue
 import subprocess
 import sys
@@ -87,10 +88,25 @@ def transcribe(name, app, profile, meta=None):
             state["transcribing"] -= 1
 
 
+def recover():
+    """Transcribe recordings left by a quit or crash: .flac files without an item, one at a time."""
+    todo = [f.name for f in sorted(db.FILES.glob("*.flac")) if not db.has_file(f.name)]
+    with lock:
+        state["transcribing"] += len(todo)
+    threading.Thread(target=lambda: [transcribe(n, None, db.active_profile()) for n in todo], daemon=True).start()
+
+
 def status():
     on = state["stream"] is not None
     return {"on": on, "seconds": int(time.time() - state["start"]) if on else 0, "transcribing": state["transcribing"]}
 
 
+def orphaned(parent):
+    while os.getppid() == parent:
+        time.sleep(1)
+    os._exit(1)  # the backend died, so don't keep transcribing for nobody
+
+
 if __name__ == "__main__":
+    threading.Thread(target=orphaned, args=(os.getppid(),), daemon=True).start()
     print(whisper(sys.argv[1]))

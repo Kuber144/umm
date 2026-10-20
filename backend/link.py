@@ -3,7 +3,7 @@ import json
 import re
 import time
 from html.parser import HTMLParser
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import parse_qsl, quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 KEYS = ("site", "title", "author", "text")  # order of the fields in meta.link and in the text added to content
@@ -13,6 +13,7 @@ MAX_ICON = 100 * 1024
 EXT = {"image/x-icon": "ico", "image/vnd.microsoft.icon": "ico", "image/svg+xml": "svg", "image/jpeg": "jpg",
        "image/gif": "gif", "image/webp": "webp"}
 TIMEOUT = 8  # seconds in total per request
+SECRET = re.compile(r"token|key|sig|code|auth|secret|pass|otp|session|reset", re.I)  # query parameter names that look like secrets
 
 
 def get(url, limit, types):
@@ -98,6 +99,8 @@ def icon(url, hrefs, folder):
 def fetch(url, icons):
     """{site, title, author, text, icon} for a link, or None when nothing could be read. icons is the folder for icon files."""
     try:
+        if any(SECRET.search(k) for k, _ in parse_qsl(urlparse(url).query, keep_blank_values=True)):
+            return None  # one-time links must not be opened, and the URL must not go to the site
         host, path = (urlparse(url).hostname or "").removeprefix("www.").removeprefix("mobile."), urlparse(url).path
         hrefs = []
         if host in ("x.com", "twitter.com") and re.match(r"/[^/]+/status/\d+", path):
