@@ -6,9 +6,12 @@ from pathlib import Path
 from typing import Annotated
 
 import objc
+from AppKit import (NSBitmapImageFileTypeJPEG, NSBitmapImageRep, NSImageCompressionFactor, NSPasteboard, NSPasteboardTypePNG,
+                    NSPasteboardTypeTIFF, NSPasteboardURLReadingFileURLsOnlyKey)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from Foundation import NSURL
 from ocrmac.ocrmac import OCR
 from pydantic import BaseModel, Field, StringConstraints
 from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly
@@ -98,10 +101,24 @@ def delete(id: int):
     return {}
 
 
+def clipboard():
+    """(kind, value): files -> list of paths, image -> None, text -> str. (None, "") when empty. Files win over image, since Finder adds an icon."""
+    with objc.autorelease_pool():
+        pb = NSPasteboard.generalPasteboard()
+        urls = pb.readObjectsForClasses_options_([NSURL], {NSPasteboardURLReadingFileURLsOnlyKey: True})
+        if urls:
+            return "files", [str(u.path()) for u in urls]
+        if {NSPasteboardTypePNG, NSPasteboardTypeTIFF} & set(pb.types() or []):
+            return "image", None
+    text = run("pbpaste")
+    return ("text", text) if text.strip() else (None, "")
+
+
 @app.get("/api/context")
 def context():
-    return {"app": front_window(), "profile": db.active_profile(), "clipboard": run("pbpaste")[:2000],
-            "recording": record.status()}
+    kind, value = clipboard()
+    return {"app": front_window(), "profile": db.active_profile(), "clipboard_kind": kind,
+            "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status()}
 
 
 def save_shot(name, app_name):
@@ -139,6 +156,24 @@ def capture(a: Shot | None = None):
     if a.area and not (db.FILES / name).exists():  # Esc during selection
         return {"id": None}
     return {"id": save_shot(name, app_name)}
+
+
+@app.post("/api/clipboard")
+def save_clipboard(a: App | None = None):
+    app_name = (a and a.app) or front_window()
+    kind, value = clipboard()
+    if kind == "files":
+        return {"ids": [db.add(p, "path", app=app_name) for p in value]}
+    if kind == "image":
+        name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
+        with objc.autorelease_pool():
+            pb = NSPasteboard.generalPasteboard()
+            rep = NSBitmapImageRep.imageRepWithData_(pb.dataForType_(NSPasteboardTypePNG) or pb.dataForType_(NSPasteboardTypeTIFF))
+            rep.representationUsingType_properties_(NSBitmapImageFileTypeJPEG, {NSImageCompressionFactor: 0.8}).writeToFile_atomically_(str(db.FILES / name), True)
+        return {"ids": [save_shot(name, app_name)]}
+    if kind == "text":
+        return {"ids": [db.add(value, app=app_name)]}
+    raise HTTPException(400, "clipboard is empty")
 
 
 @app.get("/api/profiles")

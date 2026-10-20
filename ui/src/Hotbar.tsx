@@ -57,14 +57,17 @@ export default function Hotbar() {
 
   const fail = () => send({ type: 'error' })
   const clip = ctx?.clipboard.trim() ?? ''
+  const kind = ctx?.clipboard_kind
+  const nfiles = kind === 'files' ? clip.split('\n').length : 0
   const active = ctx?.profile ?? ''
 
   const menu: (Row & { kw: string })[] = [
     { id: 'shot', icon: 'screenshot', label: 'Take a screenshot', kw: 'capture screen', run: () => send({ type: 'capture' }) },
     { id: 'area', icon: 'screenshot', label: 'Screenshot an area', kw: 'capture screen region select', run: () => send({ type: 'area' }) },
-    ...(clip ? [{ id: 'clip', icon: 'clip' as const, label: 'Save clipboard', kw: 'paste copy',
-      detail: <span className="peek">{clip.replace(/\s+/g, ' ').slice(0, 70)}</span>,
-      run: () => { api.add(clip, ctx?.app).then(() => send({ type: 'saved' }), fail) } }] : []),
+    ...(kind ? [{ id: 'clip', icon: 'clip' as const, kw: 'paste copy',
+      label: kind === 'image' ? 'Save clipboard image' : kind === 'files' ? `Save ${nfiles} copied file${nfiles > 1 ? 's' : ''}` : 'Save clipboard',
+      detail: kind === 'image' ? null : <span className="peek">{clip.replace(/\s+/g, ' ').slice(0, 70)}</span>,
+      run: () => { api.saveClipboard(ctx?.app).then(() => send({ type: 'saved' }), fail) } }] : []),
     { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', run: () => setMode('note') },
     { id: 'rec', icon: 'voice', label: rec.on ? 'Stop recording' : 'Start recording', kw: 'voice mic audio',
       detail: rec.on ? <span className="live"><i className="recdot" />{clock(rec.seconds)}</span> : rec.transcribing ? <span className="peek">transcribing</span> : null,

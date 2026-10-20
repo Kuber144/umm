@@ -61,7 +61,11 @@ DELETE /api/items/{id}                                   -> {}       also delete
 POST   /api/capture    {app?, display?, area?}           -> {id}     screenshot + OCR + thumbnail, takes ~1s
                                                                     display: 1-based number for screencapture -D, default main display
                                                                     area: true runs the interactive selection. Esc returns {id: null} and saves nothing
-GET    /api/context                                      -> {app, profile, clipboard, recording}
+POST   /api/clipboard  {app?}                            -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
+                                                                    copied files as one path item each, else text. 400 when empty
+GET    /api/context                                      -> {app, profile, clipboard_kind, clipboard, recording}
+                                                                    clipboard_kind: text | image | files | null. clipboard is the text, or the
+                                                                    copied paths one per line, empty for an image. Max 2000 chars
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
 POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent
@@ -111,7 +115,7 @@ Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot 
 
 1. Screenshot
 2. Screenshot an area
-3. Save clipboard (shows a preview, hidden when the clipboard is empty)
+3. Save clipboard (text preview, "Save clipboard image" or "Save N copied files", hidden when the clipboard is empty)
 4. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
 5. Start recording / Stop recording (shows elapsed time while on)
 6. Search memories: typing filters the rows and shows matching memories below them. `Enter` on a memory copies it (path, link or text) and closes
