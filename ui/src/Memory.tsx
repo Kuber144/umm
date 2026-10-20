@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fileUrl, type Item } from './api'
+import { fileUrl, type Item, type LinkInfo } from './api'
 import { send } from './bridge'
 import { Dot, Icon, ago, hl, when } from './ui'
 
@@ -36,16 +36,39 @@ function Voice({ file }: { file: string }) {
     : <button className="play" onClick={load} title={failed ? 'Could not load, click to retry' : 'Play recording'} aria-label="Play recording"><Icon name="play" /></button>
 }
 
-function Link({ content, q }: { content: string; q: string }) {
-  const [url, ...rest] = content.split(/\s+/)
+// Fetched details of a link: the text added to content after the URL, in the order the backend wrote it.
+const linkText = (l?: LinkInfo) =>
+  (['site', 'title', 'author', 'text'] as const).map(k => l?.[k]).filter(Boolean).join('\n')
+export const linkLabel = (it: Item) => {
+  const l = it.meta?.link
+  return l ? `${l.title || l.text || ''} - ${l.site}` : ''
+}
+
+function Link({ it, q }: { it: Item; q: string }) {
+  const [url] = it.content.split(/\s+/)
+  const l = it.meta?.link
+  const added = linkText(l)
+  let note = it.content.slice(url.length)
+  if (added && note.endsWith(added)) note = note.slice(0, -added.length)
+  note = note.trim()
   let host = url, tail = ''
   try { const u = new URL(url); host = u.host.replace(/^www\./, ''); tail = (u.pathname + u.search).replace(/^\/$/, '') } catch { /* show raw */ }
+  const open = (e: React.MouseEvent) => { e.preventDefault(); send({ type: 'openExternal', url }) }
   const site = /youtu\.?be/.test(host) ? 'YouTube' : /^(x|twitter)\.com$/.test(host) ? 'X post' : ''
   return <>
-    <a className="link" href={url} onClick={e => { e.preventDefault(); send({ type: 'openExternal', url }) }}>
-      <Icon name="link" /><b>{hl(site || host, q)}</b>{site && <span> {host}</span>}<span>{hl(tail, q)}</span>
-    </a>
-    {rest.length > 0 && <p className="txt">{hl(rest.join(' '), q)}</p>}
+    {l ? (
+      <a className="card" href={url} onClick={open}>
+        <span className="site">{it.meta?.icon ? <img className="fav" src={fileUrl(it.meta.icon)} alt="" /> : <Icon name="link" />}{hl(l.site ?? host, q)}{l.author && <span> {hl(l.author, q)}</span>}</span>
+        {l.title && <b>{hl(l.title, q)}</b>}
+        {l.text && <span className="desc">{hl(l.text, q)}</span>}
+        <span className="url">{hl(url, q)}</span>
+      </a>
+    ) : (
+      <a className="link" href={url} onClick={open}>
+        <Icon name="link" /><b>{hl(site || host, q)}</b>{site && <span> {host}</span>}<span>{hl(tail, q)}</span>
+      </a>
+    )}
+    {note && <p className="txt">{hl(note, q)}</p>}
   </>
 }
 
@@ -109,7 +132,7 @@ export function Row({ it, q, sel, all, profiles, act, onSelect }: {
               <p className="ocr">{hl(snip(it.content, q), q) || 'No text found'}</p>
             </div>
           </div>
-        ) : it.kind === 'link' ? <Link content={it.content} q={q} />
+        ) : it.kind === 'link' ? <Link it={it} q={q} />
           : it.kind === 'path' ? <code className="path"><Icon name="path" /><span><i>{hl(it.content.slice(0, i + 1), q)}</i>{hl(it.content.slice(i + 1), q)}</span></code>
           : <div className={it.kind === 'voice' ? 'voice' : undefined}>
               {it.kind === 'voice' && it.file && <Voice file={it.file} />}

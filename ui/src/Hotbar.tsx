@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { api, type Ctx, type Item, type Profiles } from './api'
+import { api, fileUrl, type Ctx, type Item, type Profiles } from './api'
 import { native, pending, send } from './bridge'
-import { copyText } from './Memory'
+import { copyText, linkLabel } from './Memory'
 import { Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
 import icon from '../../assets/icon.svg'
 import './hotbar.css'
@@ -150,8 +150,8 @@ export default function Hotbar() {
                 const i = rows.length + j
                 return (
                   <li key={m.id} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
-                    <span className="tile"><Icon name={m.kind === 'text' ? 'text' : m.kind} /></span>
-                    <span className="label">{hl(m.content.replace(/\s+/g, ' ').slice(0, 120), q)}</span>
+                    <span className="tile">{m.meta?.icon ? <img className="fav" src={fileUrl(m.meta.icon)} alt="" /> : <Icon name={m.kind === 'text' ? 'text' : m.kind} />}</span>
+                    <span className="label">{hl((linkLabel(m) || m.content.replace(/\s+/g, ' ')).slice(0, 120), q)}</span>
                     {m.profile !== active && <span className="peek"><Dot name={m.profile} />{m.profile}</span>}
                     <span className="peek">{ago(m.created_at)}</span>
                       </li>

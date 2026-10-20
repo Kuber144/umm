@@ -1,8 +1,11 @@
 import json
 import os
 import sqlite3
+import threading
 import time
 from pathlib import Path
+
+import link
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 FILES = DATA / "files"
@@ -85,7 +88,34 @@ def add(content, kind=None, file=None, app=None, profile=None, meta=None):
                      (profile or active_profile(), kind or detect(content), content, file, app,
                       json.dumps(meta) if meta else None))
     db.commit()
+    if cur.lastrowid and (kind or detect(content)) == "link":
+        threading.Thread(target=enrich, args=(cur.lastrowid, content.split()[0]), daemon=True).start()
     return cur.lastrowid
+
+
+def enrich_on():
+    import settings  # settings imports db, so import it here
+    return settings.get()["enrich_links"]
+
+
+def enrich(id, url):
+    """Fetch title and text for a saved link. Puts them in meta.link and appends them to content so FTS finds them."""
+    info = enrich_on() and link.fetch(url, FILES / "icons")
+    if info:
+        icon = info.pop("icon")  # meta.icon is a file name under /api/files/, shared by every link on that host
+        db.execute("UPDATE items SET content = content || ?, "
+                   "meta = json_set(coalesce(meta, '{}'), '$.link', json(?), '$.icon', ?) "
+                   "WHERE rowid = ? AND kind = 'link' AND json_extract(meta, '$.link') IS NULL",
+                   ("\n" + "\n".join(info.values()), json.dumps(info), icon, id))
+        db.commit()
+
+
+def backfill(delay=1):
+    """Enrich links saved before enrichment existed. One per second, newest first."""
+    for id, content in db.execute("SELECT rowid, content FROM items WHERE kind = 'link' AND json_extract(meta, '$.link') IS NULL "
+                                  "ORDER BY rowid DESC").fetchall() if enrich_on() else []:
+        enrich(id, content.split()[0])
+        time.sleep(delay)
 
 
 def update(id, content=None, profile=None):

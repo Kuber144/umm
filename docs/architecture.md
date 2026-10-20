@@ -50,6 +50,7 @@ app:  "App: window title" of the app the user was in. For MCP saves: "<agent nam
 meta: JSON object or null. Every save sets meta.source: hotbar | app (main window) | cli | mcp.
       The CLI also sets cwd. MCP saves set {source: "mcp", agent, agent_version, cwd, session}: the client name and version
       from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
+      Enriched links set {link: {site, title, author, text}, icon}, see "Link enrichment".
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
@@ -89,6 +90,20 @@ enrich_links:   default true, fetch title and description of saved links
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
 ```
+
+## Link enrichment
+
+When a link is saved, `db.add` starts a background thread (`db.enrich`, fetch code in `backend/link.py`). Saving stays instant. Tweet URLs on x.com and twitter.com use the oEmbed endpoint of X. YouTube URLs use the YouTube oEmbed endpoint. Any other URL is fetched once, HTML only, with an 8 second limit, the first 256 KB, and redirects followed. The page is read for `og:site_name`, `og:title` or `<title>`, and `og:description` or the description meta tag.
+
+The result is stored twice. Search only indexes `content`, and the UI needs the fields apart.
+
+- `meta.link = {site, title, author, text}`. Empty keys are left out. Tweets have site `X`, author `Name (@handle)` and the tweet text. YouTube has the video title and the channel as author.
+- The same values are appended to `content`, one per line, after the original text. The URL stays on the first line, `kind` stays `link`, and copy still gives the URL. The UI cuts the appended lines when it shows a note typed after the URL.
+- `meta.icon` is a file name like `icons/youtube.com.ico`, served from `/api/files/`. It comes from the page's `<link rel="icon">`, then apple-touch-icon, then `/favicon.ico`, at most 100 KB. It is saved once per host in `data/files/icons/` and never refetched. Deleting an item keeps the icon, because other links share it.
+
+A failed fetch records nothing and leaves the save alone. On backend start, a background thread enriches every link without `meta.link`, newest first, one per second. Links that never resolve, like a 404 or a PDF, are retried on each start. Editing a link's URL does not refetch.
+
+Only URLs the user saved are fetched, and nothing else is sent. Turn `enrich_links` off in Settings to stop it all, icons included.
 
 ## Native bridge
 
@@ -133,7 +148,7 @@ Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot 
 2. Save clipboard (shows a preview, hidden when the clipboard is empty)
 3. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
 4. Start recording / Stop recording (shows elapsed time while on)
-5. Search memories: typing filters the rows and shows matching memories below them. `Enter` on a memory copies it (path, link or text) and closes
+5. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes
 6. Switch profile
 7. Open umm (main window)
 8. Quit umm

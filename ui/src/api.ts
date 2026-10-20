@@ -1,5 +1,6 @@
 export type Kind = 'screenshot' | 'text' | 'path' | 'link' | 'voice'
-export type Meta = { agent?: string; agent_version?: string; cwd?: string; session?: string }
+export type LinkInfo = { site?: string; title?: string; author?: string; text?: string }
+export type Meta = { agent?: string; agent_version?: string; cwd?: string; session?: string; link?: LinkInfo; icon?: string | null }
 export type Item = { id: number; profile: string; kind: Kind; content: string; file: string | null; app: string | null; meta?: Meta | null; created_at: string }
 export type Rec = { on: boolean; seconds: number; transcribing: number }
 export type Profiles = { active: string; all: { name: string; count: number }[] }
@@ -14,7 +15,7 @@ const call = <T = object>(path: string, method = 'GET', body?: object): Promise<
 
 const qs = (p: Params) => new URLSearchParams(Object.entries(p).filter(([, v]) => v !== undefined && v !== '') as [string, string][]).toString()
 
-export const fileUrl = (name: string) => '/api/files/' + encodeURIComponent(name)
+export const fileUrl = (name: string) => '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
 
 export const api = {
   items: (p: Params) => call<Item[]>('items?' + qs(p)),
