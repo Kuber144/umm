@@ -1,146 +1,241 @@
-import AppKit
+import Cocoa
+import WebKit
 import Carbon
 
-// Ctrl+Shift+Space opens the menu
-let hotKeyCode = UInt32(kVK_Space)
-let hotKeyMods = UInt32(controlKey | shiftKey)
-let api = "http://localhost:8000/api/"
+final class Panel: NSPanel { override var canBecomeKey: Bool { true } }
 
-class Panel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
+var onHotKey: (() -> Void)?
 
-class Menu: NSObject, NSTextFieldDelegate, NSWindowDelegate {
-    let panel = Panel(contentRect: .zero, styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
-    let field = NSTextField()
-    let stack = NSStackView()
-    var options: [[String: Any]] = []
-    var app = ""
-    var selected = 0
+final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+    let scheme = Scheme()
+    let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
+    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", signals: [DispatchSourceSignal] = []
 
-    override init() {
-        super.init()
-        let bg = NSVisualEffectView()
-        bg.material = .hudWindow
-        bg.state = .active
-        bg.wantsLayer = true
-        bg.layer?.cornerRadius = 12
-        panel.contentView = bg
-        panel.level = .floating
-        panel.backgroundColor = .clear
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.delegate = self
-        field.font = .systemFont(ofSize: 18)
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.delegate = self
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.addArrangedSubview(field)
-        field.widthAnchor.constraint(equalToConstant: 560).isActive = true
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        bg.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: 12),
-            stack.topAnchor.constraint(equalTo: bg.topAnchor, constant: 12),
-        ])
+    func applicationDidFinishLaunching(_ n: Notification) {
+        backend.start()
+        NSApp.mainMenu = menuBar()
+        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        icon = Bundle.main.url(forResource: "StatusIcon", withExtension: "png").flatMap { NSImage(contentsOf: $0) }
+            ?? NSImage(systemSymbolName: "brain", accessibilityDescription: "umm")!
+        icon.size = NSSize(width: 18, height: 18)
+        icon.isTemplate = true
+        red = NSImage(size: icon.size, flipped: false) { r in
+            self.icon.draw(in: r)
+            NSColor.systemRed.set()
+            r.fill(using: .sourceAtop)
+            return true
+        }
+        status.button?.image = icon
+        let m = NSMenu()
+        m.addItem(withTitle: "Open umm", action: #selector(openMain), keyEquivalent: "").target = self
+        m.addItem(withTitle: "Quit umm", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        status.menu = m
+
+        hotbarView = makeView("#hotbar", transparent: true)
+        hotbar.contentView = hotbarView
+        // nonactivating keeps the panel on screen even when macOS refuses to activate us
+        hotbar.isOpaque = false
+        hotbar.backgroundColor = .clear
+        hotbar.hasShadow = true
+        hotbar.level = .floating
+        hotbar.isReleasedWhenClosed = false
+        hotbar.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        hotbar.delegate = self
+
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        onHotKey = { [weak self] in self?.toggle() }
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in onHotKey?(); return noErr }, 1, &spec, nil, nil)
+        var ref: EventHotKeyRef?
+        RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | shiftKey), EventHotKeyID(signature: 0x756d6d20, id: 1), GetApplicationEventTarget(), 0, &ref)
+
+        signal(SIGPIPE, SIG_IGN)
+        for s in [SIGTERM, SIGINT] {
+            signal(s, SIG_IGN)
+            let src = DispatchSource.makeSignalSource(signal: s, queue: .main)
+            src.setEventHandler { backend.stop(); exit(0) }
+            src.resume()
+            signals.append(src)
+        }
+
+        switch ProcessInfo.processInfo.environment["UMM_SHOW"] {
+        case "main": showMain(nil)
+        case "hotbar": DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.toggle() }
+        default: break
+        }
+        #if TEST // test hooks: SIGUSR1 toggles the hotbar, UMM_JS runs in the hotbar page
+        let src = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        signal(SIGUSR1, SIG_IGN)
+        src.setEventHandler { self.toggle() }
+        src.resume()
+        signals.append(src)
+        if let js = ProcessInfo.processInfo.environment["UMM_JS"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self.hotbarView.callAsyncJavaScript(js, in: nil, in: .page) { NSLog("UMM_JS \($0)") } }
+        }
+        #endif
     }
 
-    func show() {
-        if panel.isVisible { return panel.orderOut(nil) }
-        URLSession.shared.dataTask(with: URL(string: api + "context")!) { data, _, _ in
-            let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-            DispatchQueue.main.async {
-                self.app = json?["app"] as? String ?? ""
-                self.options = (json?["options"] as? [[String: Any]] ?? []) + [["label": "Stop umm (kills backend and this menu)", "stop": true]]
-                self.field.placeholderString = json.map { "\($0["profile"]!) · type a note, or pick below" } ?? "umm backend is not running"
-                self.render()
-                self.panel.makeKeyAndOrderFront(nil)
+    func applicationWillTerminate(_ n: Notification) { backend.stop() }
+
+    func menuBar() -> NSMenu {
+        let bar = NSMenu()
+        let menus: [(String, [(String, Selector, String)])] = [
+            ("umm", [("Quit umm", #selector(NSApplication.terminate(_:)), "q")]),
+            ("Edit", [("Undo", Selector(("undo:")), "z"), ("Redo", Selector(("redo:")), "Z"), ("Cut", #selector(NSText.cut(_:)), "x"),
+                      ("Copy", #selector(NSText.copy(_:)), "c"), ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")]),
+            ("Window", [("Close", #selector(NSWindow.performClose(_:)), "w")])]
+        for (title, items) in menus {
+            let sub = NSMenu(title: title)
+            for (t, s, k) in items { sub.addItem(withTitle: t, action: s, keyEquivalent: k) }
+            let item = NSMenuItem()
+            item.submenu = sub
+            bar.addItem(item)
+        }
+        return bar
+    }
+
+    // handler is this long-lived object, so the controller retaining it makes no cycle
+    func makeView(_ hash: String, transparent: Bool) -> WKWebView {
+        let c = WKWebViewConfiguration()
+        c.setURLSchemeHandler(scheme, forURLScheme: "umm")
+        c.userContentController.add(self, name: "umm")
+        let v = WKWebView(frame: .zero, configuration: c)
+        v.navigationDelegate = self
+        v.uiDelegate = self
+        if transparent { v.setValue(false, forKey: "drawsBackground") }
+        v.load(URLRequest(url: URL(string: "umm://app/" + hash)!))
+        return v
+    }
+
+    // MARK: hotbar
+
+    func toggle() {
+        if hotbar.isVisible { return hideHotbar() }
+        // fetch before activating so the frontmost app is still the user's
+        DispatchQueue.global().async {
+            let r = backend.request("GET", "/api/context", wait: 2)
+            DispatchQueue.main.async { self.showHotbar(r?.0 == 200 ? String(decoding: r!.2, as: UTF8.self) : "{}") }
+        }
+    }
+
+    func showHotbar(_ ctx: String) {
+        lastApp = ((try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any])?["app"] as? String ?? ""
+        let s = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main!
+        let f = s.visibleFrame, h = hotbar.frame.height
+        hotbar.setFrame(NSRect(x: f.midX - 340, y: f.maxY - f.height * 0.2 - h, width: 680, height: h), display: false)
+        NSApp.activate(ignoringOtherApps: true)
+        hotbar.makeKeyAndOrderFront(nil)
+        hotbar.makeFirstResponder(hotbarView)
+        hotbarView.evaluateJavaScript("window.ummShow?.(\(ctx))")
+    }
+
+    func hideHotbar(restore: Bool = true) {
+        guard hotbar.isVisible else { return }
+        hotbar.orderOut(nil)
+        if restore && main == nil && NSApp.isActive { NSApp.hide(nil) }
+    }
+
+    func windowDidResignKey(_ n: Notification) { if n.object as? NSWindow === hotbar { hideHotbar() } }
+
+    // MARK: main window
+
+    @objc func openMain() { showMain(nil) }
+
+    func showMain(_ query: String?) {
+        let open = "window.ummOpen?.(" + String(decoding: (try? JSONSerialization.data(withJSONObject: query.map { ["query": $0] } ?? [:])) ?? Data("{}".utf8), as: UTF8.self) + ")"
+        if main == nil {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+                             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.minSize = NSSize(width: 760, height: 480)
+            w.isReleasedWhenClosed = false
+            w.delegate = self
+            w.center()
+            mainView = makeView("", transparent: false)
+            w.contentView = mainView
+            main = w
+            pendingOpen = open
+        } else {
+            mainView?.evaluateJavaScript(open)
+        }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        main?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ n: Notification) {
+        guard n.object as? NSWindow === main else { return }
+        mainView?.stopLoading()
+        main?.contentView = nil
+        main?.delegate = nil
+        mainView = nil
+        main = nil
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
+        if w === mainView, let js = pendingOpen { pendingOpen = nil; w.evaluateJavaScript(js) }
+    }
+
+    // MARK: bridge
+
+    func userContentController(_ u: WKUserContentController, didReceive m: WKScriptMessage) {
+        guard let d = m.body as? [String: Any], let t = d["type"] as? String else { return }
+        switch t {
+        case "hide": hideHotbar()
+        case "saved": hideHotbar(); play("Pop")
+        case "error": play("Basso")
+        case "capture":
+            hideHotbar()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.capture() }
+        case "openMain": hideHotbar(restore: false); showMain(d["query"] as? String)
+        case "recording": status.button?.image = (d["on"] as? Bool) == true ? red : icon
+        case "resize":
+            if let h = d["height"] as? Double {
+                let f = hotbar.frame
+                hotbar.setFrame(NSRect(x: f.minX, y: f.maxY - h, width: 680, height: h), display: true)
+                hotbar.invalidateShadow()
             }
-        }.resume()
-    }
-
-    func render() {
-        stack.arrangedSubviews.dropFirst().forEach { $0.removeFromSuperview() }
-        for (i, o) in options.enumerated() {
-            let row = NSTextField(labelWithString: " " + (o["label"] as! String).replacingOccurrences(of: "\n", with: "  "))
-            row.font = .systemFont(ofSize: 14)
-            row.lineBreakMode = .byTruncatingTail
-            row.tag = i
-            row.wantsLayer = true
-            row.layer?.cornerRadius = 5
-            row.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
-            row.widthAnchor.constraint(equalToConstant: 560).isActive = true
-            stack.addArrangedSubview(row)
-        }
-        field.stringValue = ""
-        select(0)
-        let size = stack.fittingSize
-        panel.setContentSize(NSSize(width: size.width + 24, height: size.height + 24))
-        panel.center()
-        panel.makeFirstResponder(field)
-    }
-
-    func select(_ i: Int) {
-        guard !options.isEmpty else { return }
-        selected = (i + options.count) % options.count
-        for row in stack.arrangedSubviews.dropFirst() {
-            row.layer?.backgroundColor = row.tag == selected ? NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor : nil
+        case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
+        case "quit": NSApp.terminate(nil)
+        default: break
         }
     }
 
-    @objc func clicked(_ g: NSClickGestureRecognizer) { choose(g.view!.tag) }
+    func play(_ name: String) { NSSound(named: name)?.play() }
 
-    func choose(_ i: Int? = nil) {
-        let note = field.stringValue.trimmingCharacters(in: .whitespaces)
-        panel.orderOut(nil)
-        if i == nil && !note.isEmpty { return post("items", ["content": note, "app": app]) }
-        guard options.indices.contains(i ?? selected) else { return }
-        let o = options[i ?? selected]
-        if o["stop"] != nil {
-            let stop = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appendingPathComponent("../stop.sh")
-            _ = try? Process.run(stop, arguments: [])
-        } else if o["capture"] != nil {
-            // let the panel leave the screen before the screenshot
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.post("capture", [:]) }
-        } else if let content = o["content"] {
-            post("items", ["content": content, "app": app])
+    func capture() {
+        let body = (try? JSONSerialization.data(withJSONObject: ["app": lastApp])) ?? Data()
+        DispatchQueue.global().async {
+            let r = backend.request("POST", "/api/capture", headers: ["Content-Type": "application/json"], body: body)
+            DispatchQueue.main.async { self.play(r?.0 == 200 ? "Pop" : "Basso") }
         }
     }
 
-    func post(_ path: String, _ body: [String: Any]) {
-        var req = URLRequest(url: URL(string: api + path)!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "content-type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: req) { _, resp, _ in
-            let ok = (resp as? HTTPURLResponse)?.statusCode == 200
-            DispatchQueue.main.async { NSSound(named: ok ? "Pop" : "Basso")?.play() }
-        }.resume()
+    // MARK: web view delegates
+
+    func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let u = a.request.url, u.scheme != "umm" && u.scheme != "about" { NSWorkspace.shared.open(u); decisionHandler(.cancel) } else { decisionHandler(.allow) }
     }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
-        switch sel {
-        case #selector(NSResponder.moveDown(_:)): select(selected + 1)
-        case #selector(NSResponder.moveUp(_:)): select(selected - 1)
-        // Ctrl+Shift held from the hotkey turns Return into these other newline commands
-        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertLineBreak(_:)),
-             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)): choose()
-        case #selector(NSResponder.cancelOperation(_:)): panel.orderOut(nil)
-        default: return false
-        }
-        return true
+    func webView(_ w: WKWebView, createWebViewWith c: WKWebViewConfiguration, for a: WKNavigationAction, windowFeatures f: WKWindowFeatures) -> WKWebView? {
+        if let u = a.request.url, u.scheme != "umm" { NSWorkspace.shared.open(u) }
+        return nil
     }
 
-    func windowDidResignKey(_ notification: Notification) { panel.orderOut(nil) }
+    func webView(_ w: WKWebView, runJavaScriptConfirmPanelWithMessage m: String, initiatedByFrame f: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let a = NSAlert()
+        a.messageText = m
+        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Cancel")
+        completionHandler(a.runModal() == .alertFirstButtonReturn)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ w: WKWebView) { w.reload() }
 }
 
-let menu = Menu()
-var hotKey: EventHotKeyRef?
-var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in menu.show(); return noErr }, 1, &spec, nil, nil)
-// a global hotkey fires before the frontmost app sees the keys, so umm always wins while running
-RegisterEventHotKey(hotKeyCode, hotKeyMods, EventHotKeyID(signature: 0x756D6D21, id: 1), GetApplicationEventTarget(), 0, &hotKey)
-NSApplication.shared.setActivationPolicy(.accessory)
-NSApplication.shared.run()
+let delegate = App()
+NSApplication.shared.delegate = delegate
+NSApp.setActivationPolicy(.accessory)
+NSApp.run()
