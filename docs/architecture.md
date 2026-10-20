@@ -185,8 +185,6 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
                                    System Settings, then reply like "settings". The grant happens later, so ask "settings" again on focus
 {type: "chooseFolder"}             folder picker (can create folders). Swift replies with window.ummFolder, nothing on cancel
 {type: "quit"}                     kill switch, quits the app and the backend
-{type: "chooseFolder"}             show a folder picker, Swift replies with window.ummFolder?.(path), or nothing on cancel
-{type: "accessibility"}            ask for the Accessibility permission (page URLs for screenshots)
 ```
 
 Swift to UI:
