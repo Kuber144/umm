@@ -24,7 +24,7 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.flac`), `profile.txt`, `profiles.txt` (created profile names), `umm.log`, `umm.sock`.
+- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `umm.log`, `umm.sock`.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
@@ -45,7 +45,7 @@ All JSON. Paths are the same over the socket and in the Vite dev proxy.
 ```
 Item = {id, profile, kind, content, file, app, created_at}
 kind: screenshot | text | path | link | voice
-file: name under /api/files/ (screenshot jpg or voice flac), else null
+file: name under /api/files/ (screenshot jpg or voice m4a), else null
 app:  "App: window title" of the app the user was in
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]

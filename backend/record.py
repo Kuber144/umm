@@ -11,6 +11,7 @@ import soundfile as sf
 import db
 
 MODEL = "small"  # faster-whisper size, multilingual, runs in a child process only while transcribing to keep idle memory low
+LANGUAGE = "en"  # auto detect misreads short clips (it heard "hello hello" as Arabic), set None to auto detect
 lock = threading.Lock()
 state = {"stream": None, "queue": None, "writer": None, "name": None, "start": 0, "app": None, "profile": None, "transcribing": 0}
 
@@ -58,7 +59,7 @@ def stop():
 
 def whisper(path):
     from faster_whisper import WhisperModel
-    segments, _ = WhisperModel(MODEL, device="cpu", compute_type="int8").transcribe(path, vad_filter=True)
+    segments, _ = WhisperModel(MODEL, device="cpu", compute_type="int8").transcribe(path, vad_filter=True, language=LANGUAGE)
     return " ".join(s.text.strip() for s in segments)
 
 
@@ -67,6 +68,11 @@ def transcribe(name, app, profile):
         # a child process gives the model's ~500 MB back to the OS on exit, gc alone does not
         p = subprocess.run([sys.executable, __file__, str(db.FILES / name)], capture_output=True, text=True)
         text = p.stdout.strip() or "(no speech)" if p.returncode == 0 else "(transcription failed)"
+        # WebKit can't play FLAC, AAC plays everywhere and is ~3x smaller
+        m4a = name.replace(".flac", ".m4a")
+        if subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "32000", str(db.FILES / name), str(db.FILES / m4a)]).returncode == 0:
+            (db.FILES / name).unlink()
+            name = m4a
         db.add(text, "voice", name, app, profile)
     finally:
         with lock:

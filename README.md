@@ -58,7 +58,7 @@ Tools are `search_memory`, `remember` and `list_profiles`. `remember` saves to t
 
 ## Voice
 
-Recording is 16 kHz mono FLAC. Stopping starts transcription with local faster-whisper, model `small`, in a child process that exits afterwards to free memory. It uses the model from the HuggingFace cache and downloads it once if missing. The transcript is saved as a voice item next to the audio.
+Recording is 16 kHz mono, transcribed in English (set `LANGUAGE` in `backend/record.py` for another language or `None` to auto detect), and kept as 32 kbps AAC `.m4a`, which the app can play. Stopping starts transcription with local faster-whisper, model `small`, in a child process that exits afterwards to free memory. It uses the model from the HuggingFace cache and downloads it once if missing. The transcript is saved as a voice item next to the audio.
 
 ## Layout
 
