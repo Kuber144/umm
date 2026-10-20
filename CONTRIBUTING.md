@@ -16,7 +16,7 @@ You need macOS 13+, Xcode Command Line Tools, uv and Node. The README has the de
 - UI changes: `cd ui && npm run build`. The app picks them up without a rebuild. `npm run dev` runs Vite on 5173 and proxies `/api` to the socket.
 - Swift changes: `./start.sh` rebuilds when anything in `app/` changed.
 - Backend and CLI changes: `./stop.sh`, then `./start.sh`.
-- Logs are in `data/umm.log`.
+- Logs are in `~/Library/Application Support/umm/umm.log`.
 
 ## Rules
 
@@ -35,7 +35,7 @@ There is no test suite yet. Before you open a PR:
 - `cd ui && npm run lint && npm run build`
 - `swiftc -typecheck app/*.swift`
 - `cd backend && uv sync && uv run python -c "import api, mcp_server, record, db"`
-- Try your change in the real app. For the backend, `curl --unix-socket data/umm.sock http://umm/api/profiles`.
+- Try your change in the real app. For the backend, `curl --unix-socket ~/Library/Application\ Support/umm/umm.sock http://umm/api/profiles`.
 
 CI runs the same build checks on every push.
 

@@ -1,6 +1,6 @@
 # Command line
 
-`umm` is a small CLI for the running app. It talks to the backend over `data/umm.sock`, so the app has to be up. It uses only the Python standard library and starts in about 25 ms.
+`umm` is a small CLI for the running app. It talks to the backend over `~/Library/Application Support/umm/umm.sock`, so the app has to be up. It uses only the Python standard library and starts in about 25 ms.
 
 ## Install
 
@@ -106,7 +106,7 @@ umm profile rm side-project  # asks first, deletes its items and files
 | --- | --- |
 | `umm start` | Run `start.sh` and wait until the backend answers. |
 | `umm stop` | Quit the app and the backend. |
-| `umm status` | App process, backend socket, active profile, item counts, recording state and size of `data/` on disk. Exit code 1 if the app or backend is down. |
+| `umm status` | App process, backend socket, active profile, item counts, recording state, and the data folder with its size on disk. Exit code 1 if the app or backend is down. |
 
 When the app is down, every other command prints `umm: the app is not running, start it with: umm start` and exits with 1.
 
@@ -115,5 +115,6 @@ When the app is down, every other command prints `umm: the app is not running, s
 | Variable | Use |
 | --- | --- |
 | `UMM_ROOT` | Repo location. Default is the parent of `cli/`. |
+| `UMM_DATA` | Data folder, for `show`, `open` and `status`. Default is the one the app uses. |
 | `VISUAL`, `EDITOR` | Editor for `add` and `edit`. Falls back to `vi`. |
 | `NO_COLOR` | Turns colors off. |

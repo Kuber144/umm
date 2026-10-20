@@ -4,11 +4,11 @@ Personal memory tool for macOS. `umm.app` saves screenshots with OCR text, clipb
 
 ## Layout
 
-- `app/` Swift. `main.swift` is the hotkey, hotbar panel, main window and menu bar item. `Backend.swift` runs the Python backend and talks to it over `data/umm.sock`. `Web.swift` is the `umm://` scheme handler. `build.sh` builds `build/umm.app`.
-- `backend/` Python (uv). `db.py` holds all SQLite access. `api.py` is the FastAPI app. `record.py` records the mic and runs Whisper. `link.py` fetches titles and icons for saved links. `settings.py` holds the defaults for `data/settings.json`. `mcp_server.py` serves agents.
+- `app/` Swift. `main.swift` is the hotkey, hotbar panel, main window and menu bar item. `Backend.swift` runs the Python backend and talks to it over `~/Library/Application Support/umm/umm.sock`. `Web.swift` is the `umm://` scheme handler. `build.sh` builds `build/umm.app`.
+- `backend/` Python (uv). `db.py` holds all SQLite access. `api.py` is the FastAPI app. `record.py` records the mic and runs Whisper. `link.py` fetches titles and icons for saved links. `settings.py` holds the defaults for `settings.json`. `mcp_server.py` serves agents.
 - `ui/` React + Vite. One page, two views. The main window is `/` and the hotbar is `/#hotbar`. Calls `/api/*`, and the backend serves `ui/dist`.
 - `assets/` icon sources.
-- `data/` runtime files, not source. Don't commit it.
+- Data lives outside the repo, in `~/Library/Application Support/umm` or the folder named in its `location` file. `UMM_DATA` overrides both, for tests. The socket and log always stay in `~/Library/Application Support/umm`. See `docs/architecture.md`.
 - `docs/` plan and architecture.
 
 No TCP ports. The backend listens on a Unix socket and the app owns its lifetime.
@@ -34,6 +34,7 @@ cd ui && npm run lint
 
 - `UMM_SHOW=main` or `UMM_SHOW=hotbar`, set on `build/umm.app/Contents/MacOS/umm`, opens a window at launch.
 - `UMM_SWIFT_FLAGS="-D TEST" app/build.sh` adds test hooks. `SIGUSR1` toggles the hotbar and `UMM_JS` runs JavaScript in the hotbar page.
-- Check the backend with `curl --unix-socket data/umm.sock http://umm/api/profiles`.
-- Logs are in `data/umm.log`.
+- Check the backend with `curl --unix-socket ~/Library/Application\ Support/umm/umm.sock http://umm/api/profiles`.
+- Logs are in `~/Library/Application Support/umm/umm.log`.
+- Test the backend with a temporary `HOME` (keep it short, the socket path must be under 104 bytes) or `UMM_DATA`, so nothing lands in your real data.
 - Rebuilds are signed ad hoc, so macOS may ask for Screen Recording and Microphone again. `scripts/setup-signing.sh` creates a local certificate that keeps them.

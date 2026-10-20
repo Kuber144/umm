@@ -4,7 +4,7 @@
 
 ## How it works
 
-- Model: multilingual-e5-small, int8 ONNX (`Xenova/multilingual-e5-small`, 118 MB), 384 dims, English and Hindi. `data/model/` holds it. The first save downloads it, a search never does.
+- Model: multilingual-e5-small, int8 ONNX (`Xenova/multilingual-e5-small`, 118 MB), 384 dims, English and Hindi. `model/` in the data folder holds it. The first save downloads it, a search never does.
 - It runs in a child process (`backend/embed.py`) that the parent kills after 3 idle minutes. Deleting the model inside one process left 430 of 740 MB in use in a test, a process exit returns all of it.
 - Vectors are float16 bytes (768 B) in a `vec` column of `items`. Deleting an item deletes its vector. An edit clears it and the item is embedded again.
 - Saves, edits and app start call `db.embed_pending()` in a thread. It embeds every row with no vector, so old items are backfilled too. An MCP save does the same in the MCP process, and the next app start finishes whatever it left.
@@ -77,5 +77,5 @@ Misses:
 ## Limits
 
 - Everything above uses my own queries and fillers. Real data will differ. The 0.8 and 0.06 cutoffs were tuned on them.
-- The schema change rebuilds the FTS table once, and writes `data/umm.db.bak` first, like the earlier `meta` migration. If the app and an MCP server start together on an old database, both may try it. Start the app first.
+- The schema change rebuilds the FTS table once, and writes `umm.db.bak` first, like the earlier `meta` migration. If the app and an MCP server start together on an old database, both may try it. Start the app first.
 - `mcp_server.py` still tells agents to use short keywords, and its `query` description says AND-matched. Both are stale and are left for the description pass.

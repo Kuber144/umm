@@ -1,18 +1,18 @@
 # Architecture
 
-umm is one macOS app, `umm.app`. It owns the `Ctrl+Shift+Space` hotkey, shows the hotbar and the main window, and runs the Python backend as a child process. Quitting the app kills the backend. That is the kill switch. If the backend dies on its own, the app restarts it after 1s, 2s, 4s and so on up to 30s. On start it kills any orphaned backend still holding the socket.
+umm is one macOS app, `umm.app`. It owns the `Ctrl+Shift+Space` hotkey, shows the hotbar and the main window, and runs the Python backend as a child process. Quitting the app kills the backend. That is the kill switch. If the backend dies on its own, the app restarts it after 1s, 2s, 4s and so on up to 30s. Exit status 0 means the backend asked for it (after a data folder move), so it restarts after 0.5s. On start it kills any orphaned backend still holding the socket.
 
-No TCP ports. The backend listens on a Unix socket at `data/umm.sock`, so it can't clash with dev servers.
+No TCP ports. The backend listens on a Unix socket at `~/Library/Application Support/umm/umm.sock`, so it can't clash with dev servers.
 
 ```
 umm.app (Swift, app/)
   hotkey, hotbar panel, main window, status bar item
   both windows are WKWebView loading umm://app/...
-  umm:// scheme handler  ->  HTTP over data/umm.sock  ->  backend
-  starts backend/.venv/bin/python -m uvicorn api:app --uds data/umm.sock
+  umm:// scheme handler  ->  HTTP over umm.sock  ->  backend
+  starts backend/.venv/bin/python -m uvicorn api:app --uds umm.sock
 backend/ (Python, FastAPI)
-  api.py routes, db.py all SQL, record.py mic + Whisper, embed.py search model (child process), settings.py defaults for data/settings.json
-  serves ui/dist at / and data/files at /api/files
+  api.py routes, db.py all SQL, record.py mic + Whisper, embed.py search model (child process), settings.py defaults for settings.json
+  serves ui/dist at / and <data>/files at /api/files
 mcp_server.py (stdio, started by Claude Code, reads umm.db directly)
 ui/ (React + Vite)
   one app, two views: main window at /, hotbar at /#hotbar
@@ -24,8 +24,18 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `model/` (search model, 120 MB, downloaded on first save), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`. The database runs in WAL mode, so `umm.db-wal` and `umm.db-shm` sit next to it. `data/` is mode 700 and the backend runs with umask 077, so other users on the Mac can't read it.
+- The data folder (see below): `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `model/` (search model, 120 MB, downloaded on first save), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `agents/` (connected MCP servers). The database runs in WAL mode, so `umm.db-wal` and `umm.db-shm` sit next to it. The folder is mode 700 and the backend runs with umask 077, so other users on the Mac can't read it.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild. If a certificate named "umm local signing" exists in the keychain (`scripts/setup-signing.sh`), it signs with that instead and permissions survive rebuilds.
+
+## Data folder
+
+The data folder defaults to `~/Library/Application Support/umm`. The backend, the MCP server and the CLI find it the same way: `UMM_DATA` if set (tests and dev), else the absolute path in the pointer file `~/Library/Application Support/umm/location`, else the default. The Swift app does not read it. The backend reads it on every start, so a restart follows a move.
+
+`umm.sock`, `umm.log` and `location` always stay in `~/Library/Application Support/umm`, wherever the data is. A Unix socket path must be under 104 bytes, and this one is about 60 for a normal user name. Every client finds it without reading the pointer.
+
+On the first start with no pointer and no database in the default folder, `db.py` moves an old `<repo>/data` there, all but `umm.sock` and `umm.log`, and logs it.
+
+`POST /api/storage/move` copies the folder to a new place, checks the copied database has every item, writes the pointer, deletes the old folder and exits with status 0. The app then restarts the backend at the new place. During the move other writes get 503, and MCP writes wait on the database lock. An MCP server that is already running sees the pointer change on its next message and reopens at the new folder.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
 
@@ -64,7 +74,7 @@ GET    /api/apps?profile=                                -> [{app, count}]   app
 GET    /api/origins?profile=                             -> [{source, agent, cwd, count}]   items per meta source, agent and folder,
                                                                     most first, for the source, agent and project filters
 GET    /api/icon?app=                                    -> png      the icon of the installed app with that name (the part before ":"),
-                                                                    64px, cached in data/files/icons/app-<name>.png. 404 when no app has the name
+                                                                    64px, cached in <data>/files/icons/app-<name>.png. 404 when no app has the name
 POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok. Max 100,000 characters, else 422.
                                                                     Only an absolute path or one starting with ~/ is kind path
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile. Same 100,000 limit.
@@ -89,14 +99,18 @@ POST   /api/profiles/rename {from, to}                   -> {}       not for use
 DELETE /api/profiles/{name}                              -> {}       deletes its items and files, not for user or agent
 GET    /api/settings                                     -> Settings
 PATCH  /api/settings   {any Settings keys}               -> Settings  422 on a bad value, unknown keys are ignored
-GET    /api/storage                                      -> {path, bytes, kinds}   size of data/ and item count per kind
+GET    /api/storage                                      -> {path, bytes, kinds}   the data folder, its size and item count per kind
+POST   /api/storage/move {path}                          -> {path}   moves the data folder, then the backend exits and the app restarts it.
+                                                                    path must be absolute, writable, not inside the current folder,
+                                                                    and empty or missing. 400 {detail} otherwise, 409 while recording.
+                                                                    Every other write gets 503 during the move
 GET    /api/record                                       -> {on, seconds, transcribing}
 POST   /api/record/start {app?, meta?}                          -> same as GET /api/record. The voice item's app is empty when umm itself is in front
 POST   /api/record/stop                                  -> same, transcription runs in background and the voice item appears when done
 POST   /api/copy       {text}                            -> {}       puts text on the clipboard
 POST   /api/reveal     {text}                            -> {}       reveals a path in Finder
 GET    /api/agents                                       -> [{agent, agent_version, cwd, session, pid, started, last_seen, connected, memories}]
-         connected MCP servers. Each writes data/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
+         connected MCP servers. Each writes <data>/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
          memories = items with that session. Sorted by last_seen, files of dead pids are removed after 30 days.
 GET    /api/setup                                        -> {mcp, cli}   the commands that connect Claude Code and install the CLI,
                                                                     with this checkout's path
@@ -104,7 +118,7 @@ GET    /api/files/{name}                                 -> file
 GET    /api/thumb/{name}                                 -> jpg      thumbnail of a screenshot, made on first request for old ones
 ```
 
-Settings live in `data/settings.json`. The defaults are the `Settings` model in `backend/settings.py`, the only place they are written. `settings.get()` reads the file on every call, so `record.py` and `api.py` pick up a change without a restart.
+Settings live in `settings.json` in the data folder. The defaults are the `Settings` model in `backend/settings.py`, the only place they are written. `settings.get()` reads the file on every call, so `record.py` and `api.py` pick up a change without a restart.
 
 ```
 Settings = {languages, model, enrich_links, excluded_apps}
@@ -123,7 +137,7 @@ The result is stored twice. Search only indexes `content`, and the UI needs the 
 
 - `meta.link = {site, title, author, text}`. Empty keys are left out. Tweets have site `X`, author `Name (@handle)` and the tweet text. YouTube has the video title and the channel as author.
 - The same values are appended to `content`, one per line, after the original text. The URL stays on the first line, `kind` stays `link`, and copy still gives the URL. The UI cuts the appended lines when it shows a note typed after the URL.
-- `meta.icon` is a file name like `icons/youtube.com.ico`, served from `/api/files/`. It comes from the page's `<link rel="icon">`, then apple-touch-icon, then `/favicon.ico`, at most 100 KB. It is saved once per host in `data/files/icons/` and never refetched. Deleting an item keeps the icon, because other links share it.
+- `meta.icon` is a file name like `icons/youtube.com.ico`, served from `/api/files/`. It comes from the page's `<link rel="icon">`, then apple-touch-icon, then `/favicon.ico`, at most 100 KB. It is saved once per host in `files/icons/` in the data folder and never refetched. Deleting an item keeps the icon, because other links share it.
 
 A URL is not fetched when its query string has a parameter whose name contains `token`, `key`, `sig`, `code`, `auth`, `secret`, `pass`, `otp`, `session` or `reset`. Such links are often one time links (login, password reset, signed downloads), and opening them would use them up. A refused or failed fetch leaves the save alone and sets `meta.tried = 1`. On backend start, a background thread enriches every link with neither `meta.link` nor `meta.tried`, newest first, one per second, so a link that never resolves is tried once. Editing a link's text drops `meta.link`, `meta.icon` and `meta.tried` and looks the new URL up again.
 
@@ -150,6 +164,7 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "openExternal", url}        open in the default browser
 {type: "settings"}                 ask for the login item state, Swift replies with window.ummSettings
 {type: "loginItem", on}            register or unregister umm as a login item (SMAppService.mainApp), then replies like "settings"
+{type: "chooseFolder"}             folder picker (can create folders). Swift replies with window.ummFolder, nothing on cancel
 {type: "quit"}                     kill switch, quits the app and the backend
 ```
 
@@ -164,6 +179,7 @@ window.ummSettings?.({loginItem, version})
                             reply to "settings" and "loginItem". loginItem is on | approval | off | missing.
                             approval means macOS wants the person to allow it in System Settings, Login Items.
                             version is CFBundleShortVersionString. Browser dev never calls it and the UI hides the startup row.
+window.ummFolder?.(path)    reply to "chooseFolder", the absolute path of the picked folder
 ```
 
 ## Hotbar
@@ -203,7 +219,7 @@ At launch Swift calls `CGPreflightScreenCaptureAccess` and, if Screen Recording 
 
 ## Recordings and crashes
 
-A recording is a `.flac` in `data/files` until its transcription is saved. On backend start, `record.recover` transcribes every `.flac` that has no item, one at a time, into the active profile with an empty app. The Whisper child process exits when the backend dies, so a killed backend does not leave it running.
+A recording is a `.flac` in `files/` in the data folder until its transcription is saved. On backend start, `record.recover` transcribes every `.flac` that has no item, one at a time, into the active profile with an empty app. The Whisper child process exits when the backend dies, so a killed backend does not leave it running.
 
 ## Rules for every agent
 

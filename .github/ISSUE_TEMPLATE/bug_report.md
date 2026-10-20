@@ -12,4 +12,4 @@ Steps to reproduce:
 
 macOS version and chip (Apple Silicon or Intel):
 
-Relevant lines from `data/umm.log` (remove anything private):
+Relevant lines from `~/Library/Application Support/umm/umm.log` (remove anything private):

@@ -1,6 +1,6 @@
 # MCP server
 
-`backend/mcp_server.py` lets AI agents search and add to umm. It runs over stdio and reads `data/umm.db` directly, so the app does not need to be running.
+`backend/mcp_server.py` lets AI agents search and add to umm. It runs over stdio and reads `umm.db` in the data folder directly, so the app does not need to be running. It finds the folder like the backend does (`UMM_DATA`, else the pointer in `~/Library/Application Support/umm/location`, else that folder), and follows a move made in Settings. `capture_screenshot` calls the app over `~/Library/Application Support/umm/umm.sock`.
 
 ## Setup
 
@@ -55,7 +55,7 @@ Filter with `agent`, `project` (a folder and its subfolders) or `here` (the serv
 
 ## Connections
 
-Each server writes `data/agents/<session>.json` once the client has said hello, and updates `last_seen` on every message. It deletes the file on exit. `GET /api/agents` lists these files with `connected` (the process is alive) and `memories` (items from that session). A killed server stays listed as not connected for 30 days.
+Each server writes `agents/<session>.json` in the data folder once the client has said hello, and updates `last_seen` on every message. It deletes the file on exit. `GET /api/agents` lists these files with `connected` (the process is alive) and `memories` (items from that session). A killed server stays listed as not connected for 30 days.
 
 ## What agents can and can't do
 
