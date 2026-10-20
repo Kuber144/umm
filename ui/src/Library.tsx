@@ -302,9 +302,10 @@ export default function Library() {
       const t = e.target as HTMLElement
       const search = searchRef.current
       if (e.metaKey && /^[1-9]$/.test(e.key)) { if (order[+e.key - 1]) { e.preventDefault(); go(order[+e.key - 1]) } return }
+      // Cmd+K and Cmd+N also leave Settings and Connections, the search box mounts on the next render
+      if (e.metaKey && e.key === 'k') { e.preventDefault(); setView('list'); setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select() }); return }
+      if (e.metaKey && e.key === 'n') { e.preventDefault(); setView('list'); setComposing(true); return }
       if (view !== 'list') return
-      if (e.metaKey && e.key === 'k') { e.preventDefault(); search?.focus(); search?.select(); return }
-      if (e.metaKey && e.key === 'n') { e.preventDefault(); setComposing(true); return }
       if (typing(t)) {
         if (t === search && e.key === 'Escape') { if (q) setQ(''); else t.blur() }
         else if (t === search && e.key === 'ArrowDown' && list.length) { e.preventDefault(); t.blur(); listRef.current?.focus(); pickAt(Math.max(0, sel)) }
