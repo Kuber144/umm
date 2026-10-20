@@ -5,6 +5,7 @@
 Press a hotkey in any Mac app to save what you might need later, then search it yourself or let your AI agents search it.
 
 - Saves screenshots (with OCR text), the clipboard, typed notes, file paths, links and voice recordings. Each item records the app and window title you were in.
+- Keeps a clipboard history of text, images and copied files, with the app each copy came from, and pastes any of them back.
 - `Ctrl+Shift+Space` opens a small hotbar over any app. The fast path is the hotkey, then `Enter` for a screenshot.
 - A main window to search, filter, edit and organize everything into profiles.
 - Voice recordings are transcribed on your Mac with Whisper, in English, Hindi or the languages you pick.
@@ -50,9 +51,11 @@ It makes a self-signed certificate named "umm local signing" in your login keych
 
 ## Using it
 
-The hotbar opens with `Ctrl+Shift+Space`. `Ctrl+Shift+V` opens it on the clipboard history: type to filter, `Enter` pastes the entry into the app you were in (with the Accessibility permission, else it is copied and you press `Cmd+V`), `Cmd+Enter` keeps it as a memory.
+The hotbar opens with `Ctrl+Shift+Space`. `Ctrl+Shift+V` opens it on the clipboard history: type to filter, `Enter` pastes the entry into the app you were in (with the Accessibility permission, else it is copied and you press `Cmd+V`), `Cmd+Enter` keeps it as a memory. A copied file goes back as the file, so it pastes into Finder or a chat like a fresh copy.
 
-- Type to filter the rows and to see matching memories below them. `Enter` on a memory copies it.
+- Typing filters the rows. To search memories, pick "Search memories", or type and press `Enter` on `Search memories for "..."`. With an empty box it lists recent memories. `Enter` copies one, `Cmd+Enter` opens the search in the main window.
+- In clipboard history and memory search, `Space` opens a preview pane on the right with the whole entry: the full text, the image, a screenshot with its note and text, a voice note with a player and transcript, or a link card. It stays open as you move until you press `Space` again.
+- A type picker sits right of the search box. `Cmd+P` steps through it: text, images, links and files for copies, or screenshots, notes, links, paths and voice for memories.
 - Up and Down pick a row, `Enter` runs it.
 - Rows: screenshot, screenshot an area, screenshot with a note, save clipboard (text, an image or copied files), pick from clipboard history, write a note, start or stop recording, record with a note, search, switch profile, open umm, quit.
 - In the note editor `Enter` is a new line, `Cmd+Enter` saves (or takes the screenshot, or starts the recording), `Esc` goes back.
@@ -67,7 +70,7 @@ The main window opens from the hotbar or the menu bar icon, which turns red whil
 - Move with Up, Down, `j` and `k`. `Enter` copies or opens, `Delete` removes.
 - Each item can be copied, edited, moved to another profile, deleted, or revealed in Finder when it is a path. Delete asks first, then still offers Undo. Screenshots and voice notes take a note of their own, kept apart from the OCR text or transcript.
 - Drop files on the main window to save them. Images become screenshots with OCR, other files become paths.
-- `Cmd+,` opens Settings: the profile for hotkey saves, clipboard history, voice languages and model, apps the hotbar screenshot refuses to capture, link lookup, storage, how many days to keep screenshot images (their text stays), and open at login.
+- `Cmd+,` opens Settings: appearance (System, Light or Dark), the profile for hotkey saves, clipboard history, voice languages and model, apps the hotbar screenshot refuses to capture, link lookup, storage, how many days to keep screenshot images (their text stays), and open at login.
 
 Every item belongs to one profile, and new saves go to the active one.
 

@@ -13,17 +13,19 @@
 - Python backend on a Unix socket, restarted with backoff if it dies. Quitting the app stops it.
 - SQLite FTS5 search, Apple Vision OCR, app and window title for every item.
 - Profiles. Built-in `user` and `agent`, custom ones with rename, delete and move.
-- Voice. Recording and local Whisper (`faster-whisper`, model `small`), transcript saved as a voice item.
+- Voice. Recording and local Whisper (`faster-whisper`, model `medium` by default or `small`), transcript saved as a voice item.
 - Main window filters for kind, app and date, sort, screenshot grid, undo on delete.
 - MCP server with `search_memory`, `remember`, `list_profiles`.
 - Start and stop scripts, app icon, menu bar icon.
 - CLI, link enrichment, open at login, and an optional local signing certificate so permissions survive rebuilds.
 - Notes on screenshots and recordings, clipboard history in the hotbar, delete confirmation, and sound and on screen feedback for every hotbar action.
+- Hybrid search: FTS5 plus a local embedding model (`embed.py`) for fuzzy matches.
+- Clipboard history as a Raycast replacement: text, images and copied files, the source app, paste on `Enter`, a type filter and a preview pane. Memory search is its own hotbar mode, and memories can be pinned to the top.
+- Apple style look: neutral colours with the system blue accent, native glass behind the hotbar and sidebar, eased motion, and a light, dark or system appearance setting.
 
 ## Next
 
 1. Ask box in the main window that calls Claude with your API key.
-2. Embeddings for fuzzy search.
 
 ## Decisions
 
