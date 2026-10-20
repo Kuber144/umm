@@ -43,10 +43,12 @@ People can add more (for example `work`, `side-project`), rename them, delete th
 All JSON. Paths are the same over the socket and in the Vite dev proxy.
 
 ```
-Item = {id, profile, kind, content, file, app, created_at}
+Item = {id, profile, kind, content, file, app, meta, created_at}
 kind: screenshot | text | path | link | voice
 file: name under /api/files/ (screenshot jpg or voice m4a), else null
-app:  "App: window title" of the app the user was in
+app:  "App: window title" of the app the user was in. For MCP saves: "<agent name>: <project folder name>"
+meta: JSON object or null. MCP saves set {agent, agent_version, cwd, session}: the client name and version
+      from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
