@@ -79,7 +79,7 @@ export function Cmd({ text, copy }: { text: string; copy: (t: string) => Promise
 
 export const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-// A small popover: closes on outside click or Escape.
+// A small popover: closes on outside click, or on Escape, which focuses its button again.
 export function Pop({ trigger, children }: {
   trigger: (toggle: () => void, open: boolean) => ReactNode
   children: (close: () => void) => ReactNode
@@ -89,7 +89,7 @@ export function Pop({ trigger, children }: {
   useEffect(() => {
     if (!open) return
     const down = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target as Element).closest?.('[role=menu]')) { e.stopPropagation(); setOpen(false) } }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target as Element).closest?.('[role=menu]')) { e.stopPropagation(); setOpen(false); ref.current?.querySelector('button')?.focus() } }
     window.addEventListener('mousedown', down)
     window.addEventListener('keydown', key, true)
     return () => { window.removeEventListener('mousedown', down); window.removeEventListener('keydown', key, true) }

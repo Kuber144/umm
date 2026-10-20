@@ -94,13 +94,17 @@ export default function Library() {
     q: q.trim(), profile: scope, kind: kinds.join(','), app, since, until, sort: sortNow, limit, offset,
     source, agent, project, session: session?.session,
   })
+  // Reloads the rows shown, 200 per request (the API cap), keeping the selected item. first starts at the top.
   const refresh = (limit = PAGE, first = false) => {
     const n = ++seq.current
-    const lim = Math.min(200, limit)  // the API caps a page at 200
-    return page(0, lim).then(r => {
+    const id = list[sel]?.id
+    return Promise.all(Array.from({ length: Math.ceil(limit / 200) }, (_, i) => page(i * 200, Math.min(200, limit - i * 200)))).then(rs => {
       if (n !== seq.current) return
-      setItems(r); setHq(q); setMore(r.length >= lim); setLoaded(true); setFailed(false)
+      const r = rs.flat()
+      setItems(r); setHq(q); setMore(r.length >= limit); setLoaded(true); setFailed(false)
       if (first) { setSel(r.length ? 0 : -1); setPicked([]); anchor.current = 0 }
+      else if (r.some(x => x.id === id)) setSel(r.findIndex(x => x.id === id))
+      return r
     }, () => { setLoaded(true); setFailed(true) })
   }
   // Browsing a profile is only UI state. The active profile, where hotkey saves go, changes in Settings and the hotbar.
@@ -133,8 +137,13 @@ export default function Library() {
   }
   const undo = () => {
     if (!del.current) return
-    const n = del.current.its.length
-    clearTimeout(del.current.timer); del.current = null; setToast(null); refresh(items.length + n)
+    const back = del.current.its.map(x => x.id)
+    clearTimeout(del.current.timer); del.current = null; setToast(null)
+    // select what came back
+    refresh(items.length + back.length).then(r => {
+      const i = r?.findIndex(x => back.includes(x.id)) ?? -1
+      if (i >= 0) { setSel(i); setPicked(back.length > 1 ? back : []) }
+    })
   }
   useEffect(() => { window.addEventListener('pagehide', flush); return () => window.removeEventListener('pagehide', flush) })
 
@@ -311,11 +320,12 @@ export default function Library() {
       }
       if (e.key === 'ArrowDown' || e.key === 'j') step(1)
       else if (e.key === 'ArrowUp' || e.key === 'k') step(-1)
+      else if (e.metaKey && e.key === 'z' && del.current) { e.preventDefault(); undo() }
       else if (e.metaKey && e.key === 'a' && list.length) { e.preventDefault(); setPicked(list.map(x => x.id)) }
       else if (e.key === 'Enter' && it && free) { e.preventDefault(); open(it) }
       else if (e.key === ' ' && it?.kind === 'screenshot' && free) { e.preventDefault(); setZoom(it.id) }
       else if ((e.key === 'Backspace' || e.key === 'Delete') && chosen.length && free) { e.preventDefault(); remove(chosen) }
-      else if (e.key === 'Escape') { if (composing) setComposing(false); else if (picked.length) setPicked([]); else setSel(-1) }
+      else if (e.key === 'Escape') { if (composing) setComposing(false); else if (picked.length) setPicked([]); else if (sel >= 0) setSel(-1); else setQ('') }
       else if (e.key === '/') { e.preventDefault(); search?.focus() }
     }
     window.addEventListener('keydown', key)
@@ -520,7 +530,7 @@ export default function Library() {
           {pane}
         </div>}
         {drag && <div className="dropzone"><div><Icon name="plus" /><b>Drop to save in {saveTo}</b><span>Images become screenshots with their text. Files are saved as paths, text and links as notes.</span></div></div>}
-        {toast && <div className="toast" role="status">{toast.msg}{toast.undo && <button onClick={undo}>Undo</button>}</div>}
+        {toast && <div className="toast" role="status">{toast.msg}{toast.undo && <button onClick={undo} data-tip="Undo delete" data-keys="Cmd Z">Undo</button>}</div>}
       </main>}
       <Tips />
       {zoomIt && <Zoom it={zoomIt} act={act} onClose={() => setZoom(null)} step={stepZoom} />}
