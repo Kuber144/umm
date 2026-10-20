@@ -138,7 +138,7 @@ time { flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: t
 .big img { display: block; max-width: 100%; max-height: 52vh; border-radius: 6px; box-shadow: 0 0 0 1px var(--line-2), var(--lift); }
 .big + h2 { margin: 16px 0 10px; }
 .full { margin: 0 0 12px; font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 68ch; }
-.full.ocr { max-width: none; margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--sunk); color: var(--ink-2); font: 12px/18px var(--font); max-height: 320px; overflow: auto; }
+.full.ocr { max-width: 760px; margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--sunk); color: var(--ink-2); font: 12px/18px var(--font); max-height: 320px; overflow: auto; }
 .trans { padding-left: 12px; box-shadow: inset 2px 0 0 var(--line-2); color: var(--ink-2); }
 .trans span { display: block; font-size: 11px; font-weight: 600; color: var(--ink-3); }
 .pathbox { display: block; padding: 10px 12px; border-radius: 8px; background: var(--sunk); font: 12.5px/18px var(--mono); overflow-wrap: anywhere; }

@@ -35,7 +35,8 @@ function Move({ from, done }: { from: string; done: (s: Storage) => void }) {
     window.ummFolder = p => { if (p) setDir(p) }
     return () => { window.ummFolder = undefined }
   }, [])
-  const target = dir.trim() ? dir.trim().replace(/\/+$/, '') + '/umm' : ''
+  // ~ expands to the home folder of the current data path, the backend wants an absolute path
+  const target = dir.trim() ? dir.trim().replace(/^~(?=\/|$)/, from.match(/^\/Users\/[^/]+/)?.[0] ?? '~').replace(/\/+$/, '') + '/umm' : ''
   const move = () => {
     setState({ moving: 0 })
     api.moveStorage(target).then(() => {
