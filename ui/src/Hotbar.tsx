@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, fileUrl, type Ctx, type Item, type Profiles } from './api'
 import { native, pending, send } from './bridge'
-import { copyText, linkLabel } from './Memory'
-import { Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
+import { appName, copyText, linkLabel } from './Memory'
+import { AppIcon, Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
 import icon from '../../assets/icon.svg'
 import './hotbar.css'
 
 type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void }
 type Mode = 'menu' | 'note' | 'profiles'
+
+// first n characters, without cutting an emoji in half
+const chars = (s: string, n: number) => [...s].slice(0, n).join('')
 
 export default function Hotbar() {
   const [ctx, setCtx] = useState<Ctx | null>(null)
@@ -22,10 +25,15 @@ export default function Hotbar() {
   const input = useRef<HTMLInputElement>(null)
   const area = useRef<HTMLTextAreaElement>(null)
   const [shown, setShown] = useState(0)
+  const [armed, setArmed] = useState(false)
 
   // Swift calls ummShow with a fresh context every time the hotbar opens.
   useEffect(() => {
-    const show = (c: Ctx) => { setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setNote(''); setMems([]); setShown(n => n + 1) }
+    // Swift sends {} when the context fetch fails, so every field gets a default. A half-written note survives a reopen.
+    const show = (raw: Partial<Ctx>) => {
+      const c: Ctx = { app: '', profile: '', clipboard: '', clipboard_kind: null, recording: { on: false, seconds: 0, transcribing: 0 }, ...raw }
+      setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setArmed(false); setMems([]); setShown(n => n + 1)
+    }
     window.ummShow = show
     if (pending.show) { show(pending.show); pending.show = undefined }
     else if (!native) api.context().then(show, () => {})
@@ -63,21 +71,22 @@ export default function Hotbar() {
 
   const menu: (Row & { kw: string })[] = [
     { id: 'shot', icon: 'screenshot', label: 'Take a screenshot', kw: 'capture screen', run: () => send({ type: 'capture' }) },
-    { id: 'area', icon: 'screenshot', label: 'Screenshot an area', kw: 'capture screen region select', run: () => send({ type: 'area' }) },
-    ...(kind ? [{ id: 'clip', icon: 'clip' as const, kw: 'paste copy',
+    { id: 'area', icon: 'area', label: 'Screenshot an area', kw: 'capture screen region select', run: () => send({ type: 'area' }) },
+    ...(kind ? [{ id: 'clip', icon: kind === 'image' ? 'screenshot' as const : kind === 'files' ? 'files' as const : 'clip' as const, kw: 'paste copy',
       label: kind === 'image' ? 'Save clipboard image' : kind === 'files' ? `Save ${nfiles} copied file${nfiles > 1 ? 's' : ''}` : 'Save clipboard',
-      detail: kind === 'image' ? null : <span className="peek">{clip.replace(/\s+/g, ' ').slice(0, 70)}</span>,
+      detail: kind === 'image' ? null : <span className="peek">{chars(clip.replace(/\s+/g, ' '), 70)}</span>,
       run: () => { api.saveClipboard(ctx?.app).then(() => send({ type: 'saved' }), fail) } }] : []),
-    { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', run: () => setMode('note') },
+    { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', detail: note.trim() ? <span className="peek">{chars(note.trim(), 40)}</span> : null, run: () => setMode('note') },
     { id: 'rec', icon: 'voice', label: rec.on ? 'Stop recording' : 'Start recording', kw: 'voice mic audio',
       detail: rec.on ? <span className="live"><i className="recdot" />{clock(rec.seconds)}</span> : rec.transcribing ? <span className="peek">transcribing</span> : null,
-      run: () => (rec.on ? api.recStop() : api.recStart(ctx?.app)).then(r => { setRec(r); send({ type: 'recording', on: r.on }); send({ type: 'hide' }) }, fail) },
+      run: () => (rec.on ? api.recStop() : api.recStart('hotbar', ctx?.app)).then(r => { setRec(r); send({ type: 'recording', on: r.on }); send({ type: 'hide' }) }, fail) },
     { id: 'find', icon: 'search', label: query ? `Search umm for "${q.trim()}"` : 'Search memories', kw: query, detail: query ? null : <span className="peek">just start typing</span>,
       run: () => (query ? send({ type: 'openMain', query: q.trim() }) : input.current?.focus()) },
     { id: 'prof', icon: 'user', label: 'Switch profile', kw: 'profiles user agent', detail: <span className="peek"><Dot name={active} />{active}</span>,
       run: () => { api.profiles().then(setProfiles); setMode('profiles'); setQ(''); setSel(-1) } },
     { id: 'open', icon: 'open', label: 'Open umm', kw: 'main window', run: () => send({ type: 'openMain' }) },
-    { id: 'quit', icon: 'quit', label: 'Quit umm', kw: 'exit kill', run: () => send({ type: 'quit' }) },
+    { id: 'quit', icon: 'quit', label: armed ? 'Recording is on. Enter again to quit' : 'Quit umm', kw: 'exit kill',
+      run: () => (rec.on && !armed ? setArmed(true) : send({ type: 'quit' })) },
   ]
   const match = (s: string) => query.split(/\s+/).every(w => s.toLowerCase().includes(w))
   const pick = (name: string) => api.setProfile(name).then(() => { setCtx(c => c && { ...c, profile: name }); setMode('menu'); setQ('') }, fail)
@@ -90,8 +99,12 @@ export default function Hotbar() {
   const rows: Row[] = mode === 'profiles' ? profRows : query ? [...hits.filter(r => r.id !== 'find'), ...hits.filter(r => r.id === 'find')] : hits
   const memRows = mode === 'menu' ? mems : []
   const total = rows.length + memRows.length
-  // before any arrow key: the first specific row, else the first memory, else the search row
-  const at = sel < 0 ? (rows[0]?.id === 'find' && memRows.length ? rows.length : 0) : Math.min(sel, Math.max(0, total - 1))
+  // Before any arrow key, a typed query picks a row only when it starts that row's label, else the first memory, else search.
+  // So "exit" or "mic" plus Enter searches instead of quitting or recording.
+  const prefix = rows.findIndex(r => r.label.toLowerCase().startsWith(query))
+  const at = sel >= 0 ? Math.min(sel, Math.max(0, total - 1))
+    : !query || mode === 'profiles' ? 0 : prefix >= 0 ? prefix : memRows.length ? rows.length : rows.findIndex(r => r.id === 'find')
+  useEffect(() => { root.current?.querySelector('li.on')?.scrollIntoView({ block: 'nearest' }) }, [at])
 
   const run = (i: number) => {
     if (i < rows.length) return rows[i].run()
@@ -99,18 +112,19 @@ export default function Hotbar() {
     if (m) api.copy(copyText(m)).then(() => send({ type: 'hide' }), fail)
   }
   const saveNote = () => {
-    if (note.trim()) api.add(note.trim(), ctx?.app).then(() => send({ type: 'saved' }), fail)
+    if (note.trim()) api.add(note.trim(), 'hotbar', ctx?.app).then(() => { setNote(''); send({ type: 'saved' }) }, fail)
   }
   const back = () => { setMode('menu'); setQ(''); setSel(-1) }
 
   const onKey = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return  // Enter confirms an input method's text, it must not run a row
     if (mode === 'note') {
       if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); saveNote() }
       else if (e.key === 'Escape') { e.preventDefault(); back() }
       return
     }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSel((at + 1) % Math.max(1, total)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((at + total - 1) % Math.max(1, total)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSel(Math.min(total - 1, at + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, at - 1)) }
     else if (e.key === 'Enter' && !e.metaKey) { e.preventDefault(); run(at) }
     else if (e.key === 'Escape') { e.preventDefault(); if (mode === 'profiles') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
   }
@@ -134,12 +148,13 @@ export default function Hotbar() {
         <>
           <div className="ask">
             <img className="logo" src={icon} alt="" />
-            <input ref={input} value={q} onChange={e => { setQ(e.target.value); setSel(-1) }} spellCheck={false} autoFocus
+            <input ref={input} value={q} onChange={e => { setQ(e.target.value); setSel(-1); setArmed(false) }} spellCheck={false} autoFocus
+              role="combobox" aria-expanded aria-controls="hrows" aria-activedescendant={total ? 'h' + at : undefined}
               placeholder={mode === 'profiles' ? 'Pick a profile, or type a new name' : 'umm... what do you want to keep or find?'} />
           </div>
-          <ul className="rows" role="listbox">
+          <ul className={'rows' + (mode === 'profiles' ? ' capped' : '')} id="hrows" role="listbox">
             {rows.map((r, i) => (
-              <li key={r.id} role="option" aria-selected={i === at} className={(i === at ? 'on' : '') + (!query && mode === 'menu' && (r.id === 'rec' || r.id === 'prof') ? ' split' : '')}
+              <li key={r.id} id={'h' + i} role="option" aria-selected={i === at} className={(i === at ? 'on' : '') + (!query && mode === 'menu' && (r.id === 'rec' || r.id === 'prof') ? ' split' : '')}
                 onMouseMove={() => setSel(i)} onClick={() => run(i)}>
                 {tile(r)}
                 <span className="label">{r.label}</span>
@@ -153,12 +168,12 @@ export default function Hotbar() {
               {memRows.map((m, j) => {
                 const i = rows.length + j
                 return (
-                  <li key={m.id} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
-                    <span className="tile">{m.meta?.icon ? <img className="fav" src={fileUrl(m.meta.icon)} alt="" /> : <Icon name={m.kind === 'text' ? 'text' : m.kind} />}</span>
-                    <span className="label">{hl((linkLabel(m) || m.content.replace(/\s+/g, ' ')).slice(0, 120), q)}</span>
+                  <li key={m.id} id={'h' + i} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
+                    <span className="tile">{m.meta?.icon ? <img className="fav" src={fileUrl(m.meta.icon)} alt="" /> : m.app ? <AppIcon name={appName(m.app)} /> : <Icon name={m.kind} />}</span>
+                    <span className="label">{hl(chars(linkLabel(m) || m.content.slice(0, 400).replace(/\s+/g, ' '), 120), q)}</span>
                     {m.profile !== active && <span className="peek"><Dot name={m.profile} />{m.profile}</span>}
                     <span className="peek">{ago(m.created_at)}</span>
-                      </li>
+                  </li>
                 )
               })}
             </ul>
