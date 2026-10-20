@@ -1,3 +1,4 @@
+import mimetypes
 import re
 import subprocess
 from datetime import datetime
@@ -168,6 +169,7 @@ def reveal(t: Text):
     return {}
 
 
+mimetypes.add_type("audio/mp4", ".m4a")  # the default audio/mp4a-latm is not playable in WebKit
 app.mount("/api/files", StaticFiles(directory=db.FILES))
 dist = Path(__file__).resolve().parent.parent / "ui" / "dist"
 if dist.exists():
