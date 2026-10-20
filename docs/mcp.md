@@ -39,7 +39,7 @@ Use `--project`, not `--directory`. `--directory` changes the working folder to 
 
 An item is `{id, profile, kind, content, file, app, meta, created_at}`. For screenshots and voice, `file` is an absolute path the agent can open.
 
-Search is AND-matched with prefix matching, so short keywords work best. `since` and `until` are `YYYY-MM-DD`, inclusive. `sort` is `relevance`, `new` or `old`.
+Search is hybrid. Keyword hits (all words, prefix match) and meaning hits are fused, so a question like "what test runner does the user like" finds "uses pytest". Without the model, or while an item is not embedded yet, it is keywords only. `since` and `until` are `YYYY-MM-DD`, inclusive. `sort` is `relevance`, `new` or `old`.
 
 ## Where a memory came from
 
