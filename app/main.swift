@@ -30,7 +30,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     let scheme = Scheme()
     let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
-    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastURL: String?, lastDisplay: Int?, signals: [DispatchSourceSignal] = []
+    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastURL: String?, lastDisplay: Int?, signals: [DispatchSourceSignal] = [], woken = Set<pid_t>()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         backend.start()
@@ -149,13 +149,21 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         func get(_ e: CFTypeRef, _ k: String) -> CFTypeRef? { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e as! AXUIElement, k as CFString, &v) == .success ? v : nil }
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5) // a hung app must not hold up the hotbar
         let app = AXUIElementCreateApplication(pid)
-        if let w = get(app, kAXFocusedWindowAttribute), let d = get(w, kAXDocumentAttribute) as? String, !d.isEmpty { return d }
-        var e = get(app, kAXFocusedUIElementAttribute), n = 0 // browsers: walk up from the focus to its web area
-        while let x = e, n < 50 {
-            if get(x, kAXRoleAttribute) as? String == "AXWebArea" { return (get(x, "AXURL") as? URL)?.absoluteString }
-            e = get(x, kAXParentAttribute)
-            n += 1
+        func read() -> String? {
+            if let w = get(app, kAXFocusedWindowAttribute), let d = get(w, kAXDocumentAttribute) as? String, !d.isEmpty { return d }
+            var e = get(app, kAXFocusedUIElementAttribute), n = 0 // browsers: walk up from the focus to its web area
+            while let x = e, n < 50 {
+                if get(x, kAXRoleAttribute) as? String == "AXWebArea" { return (get(x, "AXURL") as? URL)?.absoluteString }
+                e = get(x, kAXParentAttribute)
+                n += 1
+            }
+            return nil
         }
+        if let u = read() { return u }
+        guard woken.insert(pid).inserted else { return nil }
+        // once per app: Firefox builds its web tree after the first query, Electron after AXManualAccessibility. Else the next open finds it
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        for _ in 0..<2 { usleep(50_000); if let u = read() { return u } }
         return nil
     }
 
