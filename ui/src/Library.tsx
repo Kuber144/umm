@@ -161,6 +161,7 @@ export default function Library() {
     save: (it, content) => api.edit(it.id, { content }).then(() => { refresh(items.length) }, e => { say('Could not save'); throw e }),
     note: (it, note) => api.edit(it.id, { note }).then(() => { refresh(items.length) }, e => { say('Could not save'); throw e }),
     zoom: it => setZoom(it.id),
+    pin: (it, on) => api.edit(it.id, { pinned: on }).then(() => { say(on ? 'Pinned' : 'Unpinned'); refresh(items.length) }, () => say('Could not pin')),
     shot: (it, what) => (what === 'copy' ? api.copyImage(it.id) : api.open(it.id, what === 'reveal'))
       .then(() => what === 'copy' && say('Image copied'), () => say(what === 'copy' ? 'Could not copy the image' : 'Could not open the screenshot')),
   }

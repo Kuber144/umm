@@ -88,10 +88,20 @@ class Edit(BaseModel):
     content: Content | None = None
     profile: ProfileName | None = None
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=db.MAX_CONTENT)] | None = None  # "" clears
+    pinned: bool | None = None  # pinned items come first in a list without a query
 
 
 class Text(BaseModel):
     text: str
+
+
+class At(BaseModel):
+    at: str  # the `at` of a clipboard history entry
+
+
+class Clip(At):
+    note: Content | None = None
+    profile: ProfileName | None = None
 
 
 class App(BaseModel):
@@ -200,7 +210,7 @@ def add(item: Item):
 
 @app.patch("/api/items/{id}")
 def edit(id: int, e: Edit):
-    db.update(id, e.content, e.profile, e.note)
+    db.update(id, e.content, e.profile, e.note, e.pinned)
     return {}
 
 
@@ -226,6 +236,26 @@ def clipboard():
     return ("text", text) if text.strip() else (None, "")
 
 
+def pasteboard_image():
+    pb = NSPasteboard.generalPasteboard()
+    return pb.dataForType_(NSPasteboardTypePNG) or pb.dataForType_(NSPasteboardTypeTIFF)
+
+
+def jpg(data, path):
+    with objc.autorelease_pool():
+        NSBitmapImageRep.imageRepWithData_(data).representationUsingType_properties_(
+            NSBitmapImageFileTypeJPEG, {NSImageCompressionFactor: 0.8}).writeToFile_atomically_(str(path), True)
+
+
+def put_image(f):
+    """The image file on the pasteboard as PNG (macOS adds TIFF on request)."""
+    with objc.autorelease_pool():
+        pb = NSPasteboard.generalPasteboard()
+        pb.clearContents()
+        pb.setData_forType_(NSBitmapImageRep.imageRepWithContentsOfFile_(str(f)).representationUsingType_properties_(NSBitmapImageFileTypePNG, {}),
+                            NSPasteboardTypePNG)
+
+
 @app.get("/api/context")
 def context(url: str | None = None):  # url is the page or document Swift read over Accessibility
     kind, value = clipboard()
@@ -234,31 +264,51 @@ def context(url: str | None = None):  # url is the page or document Swift read o
 
 
 try:
-    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text, at}] newest first. Text copies the backend saw, for the hotbar picker
+    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text, at} or {image, at}] newest first. What the backend saw, for the hotbar picker
 except (OSError, ValueError):
     history = []
+(db.FILES / "clipboard").mkdir(exist_ok=True)  # the images of history, served by /api/files
 
 
-def save_history():
+def keep(new):
+    """The new history. Images that fell off lose their file."""
+    old, history[:] = history[:], new
+    for h in old:
+        if "image" in h and h not in history:
+            (db.FILES / h["image"]).unlink(missing_ok=True)
     CLIP.with_suffix(".tmp").write_text(json.dumps(history))
     CLIP.with_suffix(".tmp").replace(CLIP)
 
 
+def remember(entry, n):
+    """Newest first, up to n. An older copy of the same text is dropped, images are not compared."""
+    text = entry.get("text")
+    keep([entry, *(h for h in history if text is None or h.get("text") != text)][:n])
+
+
+def remember_image(data, n):
+    name = f"clipboard/{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.jpg"
+    jpg(data, db.FILES / name)
+    remember({"image": name, "at": datetime.now().isoformat(timespec="seconds")}, n)
+
+
+seen = [None]  # the pasteboard changeCount the watcher saw last. A restore sets it, so its own copy is not a new entry
+
+
 def watch_clipboard():
-    count = None
     while True:
         time.sleep(1)
         n = settings.get()["clipboard_history"]
         with objc.autorelease_pool():
-            changed, count = count != (c := NSPasteboard.generalPasteboard().changeCount()), c
-        if not n:
-            if history:
-                history.clear()
-                save_history()
-        elif changed and (r := clipboard())[0] == "text":
-            text = r[1][:db.MAX_CONTENT]
-            history[:] = [{"text": text, "at": datetime.now().isoformat(timespec="seconds")}, *(h for h in history if h["text"] != text)][:n]
-            save_history()
+            changed, seen[0] = seen[0] != (c := NSPasteboard.generalPasteboard().changeCount()), c
+            if not n:
+                if history:
+                    keep([])
+            elif changed and (r := clipboard())[0] in ("image", "text"):
+                if r[0] == "image":
+                    remember_image(pasteboard_image(), n)
+                else:
+                    remember({"text": r[1][:db.MAX_CONTENT], "at": datetime.now().isoformat(timespec="seconds")}, n)
 
 
 threading.Thread(target=watch_clipboard, daemon=True).start()
@@ -267,6 +317,38 @@ threading.Thread(target=watch_clipboard, daemon=True).start()
 @app.get("/api/clipboard/history")
 def clipboard_history():
     return history
+
+
+@app.delete("/api/clipboard/history")
+def clear_history():
+    keep([])
+    return {}
+
+
+def entry(at):
+    if not (e := next((h for h in history if h["at"] == at), None)) or "image" in e and not (db.FILES / e["image"]).is_file():
+        raise HTTPException(404, "no clipboard entry with that time")
+    return e
+
+
+@app.post("/api/clipboard/restore")
+def restore_clipboard(a: At):
+    e = entry(a.at)
+    run("pbcopy", input=e["text"]) if "text" in e else put_image(db.FILES / e["image"])
+    with objc.autorelease_pool():
+        seen[0] = NSPasteboard.generalPasteboard().changeCount()
+    keep([e, *(h for h in history if h is not e)])  # newest first, like a fresh copy
+    return {}
+
+
+@app.post("/api/clipboard/save")
+def save_history_entry(c: Clip):
+    e, app_name, meta = entry(c.at), front_window(), {"source": "hotbar"}
+    if "text" in e:
+        return {"id": db.add(e["text"], app=app_name, profile=c.profile, meta=meta, note=c.note)}
+    name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
+    shutil.copy(db.FILES / e["image"], db.FILES / name)
+    return {"id": save_shot(name, app_name, meta, c.profile, c.note)}
 
 
 def save_shot(name, app_name, meta=None, profile=None, note=None):
@@ -338,9 +420,7 @@ def save_clipboard(a: App | None = None):
     if kind == "image":
         name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
         with objc.autorelease_pool():
-            pb = NSPasteboard.generalPasteboard()
-            rep = NSBitmapImageRep.imageRepWithData_(pb.dataForType_(NSPasteboardTypePNG) or pb.dataForType_(NSPasteboardTypeTIFF))
-            rep.representationUsingType_properties_(NSBitmapImageFileTypeJPEG, {NSImageCompressionFactor: 0.8}).writeToFile_atomically_(str(db.FILES / name), True)
+            jpg(pasteboard_image(), db.FILES / name)
         return {"ids": [save_shot(name, app_name, a and a.meta)]}
     if kind == "text":
         return {"ids": [db.add(value, app=app_name, meta=a and a.meta)]}
@@ -496,11 +576,7 @@ def copy_image(o: Id):
     it = db.get(o.id)
     if not it or it["kind"] != "screenshot" or not it["file"] or not (db.FILES / it["file"]).is_file():
         raise HTTPException(404, "no screenshot image with that id")
-    with objc.autorelease_pool():
-        rep = NSBitmapImageRep.imageRepWithContentsOfFile_(str(db.FILES / it["file"]))
-        pb = NSPasteboard.generalPasteboard()
-        pb.clearContents()
-        pb.setData_forType_(rep.representationUsingType_properties_(NSBitmapImageFileTypePNG, {}), NSPasteboardTypePNG)  # macOS adds TIFF on request
+    put_image(db.FILES / it["file"])
     return {}
 
 

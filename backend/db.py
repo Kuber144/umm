@@ -195,7 +195,7 @@ def backfill(delay=1):
 
 
 @locked
-def update(id, content=None, profile=None, note=None):
+def update(id, content=None, profile=None, note=None, pinned=None):
     if content is not None:  # a new text drops what was fetched for the old link
         db.execute("UPDATE items SET content = ?, kind = ?, vec = NULL, meta = json_remove(meta, '$.link', '$.icon', '$.tried') "
                    "WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')", (content, detect(content), id))
@@ -205,6 +205,9 @@ def update(id, content=None, profile=None, note=None):
         db.execute("UPDATE items SET note = ?, vec = NULL WHERE rowid = ?", (note or None, id))
     if profile:
         db.execute("UPDATE items SET profile = ? WHERE rowid = ?", (profile, id))
+    if pinned is not None:  # only meta changes, so the vector stays
+        db.execute("UPDATE items SET meta = CASE WHEN ? THEN json_set(coalesce(meta, '{}'), '$.pinned', 1) ELSE json_remove(meta, '$.pinned') END "
+                   "WHERE rowid = ?", (pinned, id))
     commit()
     if content is not None and (r := get(id)) and r["kind"] == "link":
         enrich_later(id, content)
@@ -286,6 +289,8 @@ def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=No
             found = {r["id"]: row(r) for r in db.execute(f"SELECT {COLS} FROM items WHERE rowid IN ({','.join('?' * len(ids))})", ids)}
             return [found[i] for i in ids]
         order = {"old": "rowid", "new": "rowid DESC"}.get(sort) or ("rank, rowid DESC" if match else "rowid DESC")
+        if not match and order == "rowid DESC":  # pinned first
+            order = "coalesce(json_extract(meta, '$.pinned'), 0) DESC, rowid DESC"
         sql = f"SELECT {COLS} FROM items {clause(where)} ORDER BY {order} LIMIT ? OFFSET ?"
         return [row(r) for r in db.execute(sql, (*args, limit, offset))]
 

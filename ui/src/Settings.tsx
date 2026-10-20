@@ -118,6 +118,7 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
   const [store, setStore] = useState<Storage | null>(null)
   const mac = useMac()
   const [err, setErr] = useState(false)
+  const [cleared, setCleared] = useState(false)
   const [setup, setSetup] = useState<{ mcp: string; cli: string } | null>(null)
 
   useEffect(() => {
@@ -152,6 +153,7 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
           </Row>
           <Row label="Clipboard history" hint="Recent copied text the hotbar can save. Kept in the data folder with everything else.">
             <Pick value={String(s.clipboard_history)} set={v => patch({ clipboard_history: +v })} label="Clipboard history" options={[[0, 'Off'], [50, '50'], [200, '200'], [500, '500']].map(([d, l]) => ({ value: String(d), label: String(l) }))} />
+            <button className="btn" onClick={() => api.clipClear().then(() => { setCleared(true); setTimeout(() => setCleared(false), 1500) }, () => {})}>{cleared ? 'Cleared' : 'Clear'}</button>
           </Row>
           {native && <Row label="Open at login" hint={mac.loginItem === 'approval' ? 'Allow umm in System Settings, General, Login Items.' : 'umm starts in the menu bar.'}>
             <Switch on={loginOn} set={on => send({ type: 'loginItem', on })} label="Open at login" />

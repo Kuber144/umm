@@ -35,6 +35,7 @@ const paths = {
   term: <><rect x="2" y="3" width="12" height="10" rx="2" /><path d="M5 6.5L7 8l-2 1.5M8.5 10H11" /></>,
   spark: <path d="M8 2.5v3.2M8 10.3v3.2M2.5 8h3.2M10.3 8h3.2M4.1 4.1l2.2 2.2M9.7 9.7l2.2 2.2M11.9 4.1L9.7 6.3M6.3 9.7l-2.2 2.2" />,
   stack: <path d="M8 2.5l5.5 3L8 8.5l-5.5-3zM2.5 8.2L8 11.2l5.5-3M2.5 10.7L8 13.7l5.5-3" />,
+  pin: <path d="M6 2.5h4M6.8 2.5v4L5 9h6L9.2 6.5v-4M8 9v4.5" />,
   plug: <path d="M6 2.5v3M10 2.5v3M4.5 5.5h7v2a3.5 3.5 0 01-7 0zM8 11v2.5" />,
 }
 export type IconName = keyof typeof paths

@@ -6,7 +6,7 @@ import { AppIcon, Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
 import icon from '../../assets/icon.svg'
 import './hotbar.css'
 
-type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void; edit?: () => void }
+type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void; edit?: () => void; save?: () => void; thumb?: string }
 type Mode = 'menu' | 'note' | 'profiles' | 'clip'
 // what a note does on Cmd+Enter: header, footer hint
 const THEN = { save: ['', 'save'], shot: ['Then takes a screenshot', 'screenshot'], rec: ['Then starts recording', 'record'], clip: ['Edit, then save', 'save'] }
@@ -23,8 +23,9 @@ export default function Hotbar() {
   const [note, setNote] = useState('')
   const [then, setThen] = useState<keyof typeof THEN>('save')
   const [cnote, setCnote] = useState('')  // combo notes are fresh, so the plain draft in `note` survives
-  const [hist, setHist] = useState<{ text: string; at: string }[]>([])
+  const [hist, setHist] = useState<{ text?: string; image?: string; at: string }[]>([])
   const [mems, setMems] = useState<Item[]>([])
+  const [peek, setPeek] = useState<number | null>(null)
   const [profiles, setProfiles] = useState<Profiles>({ active: '', all: [] })
   const [rec, setRec] = useState(ctx?.recording ?? { on: false, seconds: 0, transcribing: 0 })
   const root = useRef<HTMLDivElement>(null)
@@ -36,12 +37,13 @@ export default function Hotbar() {
   // Swift calls ummShow with a fresh context every time the hotbar opens.
   useEffect(() => {
     // Swift sends {} when the context fetch fails, so every field gets a default. A half-written note survives a reopen.
-    const show = (raw: Partial<Ctx>) => {
+    const show = (raw: Partial<Ctx>, mode?: string) => {
       const c: Ctx = { app: '', profile: '', clipboard: '', clipboard_kind: null, recording: { on: false, seconds: 0, transcribing: 0 }, ...raw }
-      setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setArmed(false); setMems([]); setShown(n => n + 1)
+      setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setArmed(false); setMems([]); setPeek(null); setShown(n => n + 1)
+      if (mode === 'clip') api.clipHistory().then(h => { setHist(h); setMode('clip') }, () => {})  // Ctrl+Shift+V opens straight into the history
     }
     window.ummShow = show
-    if (pending.show) { show(pending.show); pending.show = undefined }
+    if (pending.show) { show(pending.show, pending.mode); pending.show = undefined }
     else if (!native) api.context().then(show, () => {})
     return () => { window.ummShow = undefined }
   }, [])
@@ -81,6 +83,7 @@ export default function Hotbar() {
     { id: 'shot', icon: 'screenshot', label: 'Take a screenshot', kw: 'capture screen', run: () => send({ type: 'capture' }) },
     { id: 'area', icon: 'area', label: 'Screenshot an area', kw: 'capture screen region select', run: () => send({ type: 'area' }) },
     { id: 'shotnote', icon: 'screenshot', label: 'Screenshot with a note', kw: 'capture annotate caption', run: () => openNote('shot') },
+    ...(rec.on ? [] : [{ id: 'shotrec', icon: 'screenshot' as const, label: 'Screenshot and record', kw: 'narrate voice capture', run: () => send({ type: 'capture', record: true }) }]),
     ...(kind ? [{ id: 'clip', icon: kind === 'image' ? 'screenshot' as const : kind === 'files' ? 'files' as const : 'clip' as const, kw: 'paste copy',
       label: kind === 'image' ? 'Save clipboard image' : kind === 'files' ? `Save ${nfiles} copied file${nfiles > 1 ? 's' : ''}` : 'Save clipboard',
       detail: kind === 'image' ? null : <span className="peek secret">{chars(clip.replace(/\s+/g, ' '), 70)}</span>,
@@ -107,8 +110,13 @@ export default function Hotbar() {
     ...profiles.all.filter(p => match(p.name)).map(p => ({ id: p.name, icon: 'dot' as const, label: p.name, detail: <span className="peek">{p.name === active ? 'active, ' : ''}{p.count}</span>, run: () => pick(p.name) })),
     ...(query && !profiles.all.some(p => p.name === q.trim()) ? [{ id: '+', icon: 'dot' as const, label: `Create "${q.trim()}"`, run: () => pick(q.trim()) }] : []),
   ]
-  const histRows: Row[] = hist.filter(h => match(h.text)).map((h, i) => ({ id: '' + i, icon: 'clip', label: flat(h.text), detail: <span className="peek">{ago(h.at)}</span>,
-    run: () => { api.add(h.text, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => send({ type: 'saved', kind: 'clip', label: 'Clipboard saved', detail: flat(h.text) }), fail) }, edit: () => openNote('clip', h.text) }))
+  const histRows: Row[] = hist.filter(h => match(h.text ?? 'image')).map((h, i) => {
+    const what = h.text ? flat(h.text) : 'Image'
+    return { id: '' + i, icon: 'clip', label: what, thumb: h.image, detail: <span className="peek">{ago(h.at)}</span>,
+      run: () => { api.clipRestore(h.at).then(() => send({ type: 'paste', detail: what }), fail) },
+      save: () => { api.clipSave(h.at).then(() => send({ type: 'saved', kind: 'clip', label: h.text ? 'Clipboard saved' : 'Image saved', detail: h.text ? what : undefined }), fail) },
+      edit: h.text ? () => openNote('clip', h.text) : undefined }
+  })
   // the generic search row goes last while typing, so a specific match wins Enter
   const hits = menu.filter(r => !query || r.id === 'find' || match(r.label + ' ' + r.kw))
   const rows: Row[] = mode === 'profiles' ? profRows : mode === 'clip' ? histRows : query ? [...hits.filter(r => r.id !== 'find'), ...hits.filter(r => r.id === 'find')] : hits
@@ -119,7 +127,9 @@ export default function Hotbar() {
   const prefix = rows.findIndex(r => r.label.toLowerCase().startsWith(query))
   const at = sel >= 0 ? Math.min(sel, Math.max(0, total - 1))
     : !query || mode !== 'menu' ? 0 : prefix >= 0 ? prefix : memRows.length ? rows.length : rows.findIndex(r => r.id === 'find')
-  useEffect(() => { root.current?.querySelector('li.on')?.scrollIntoView({ block: 'nearest' }) }, [at])
+  useEffect(() => { root.current?.querySelector('li.on')?.scrollIntoView({ block: 'nearest' }); setPeek(null) }, [at])
+  const pm = memRows[at - rows.length]
+  const open = pm && pm.id === peek ? pm : null
 
   const run = (i: number) => {
     if (i < rows.length) return rows[i].run()
@@ -143,15 +153,17 @@ export default function Hotbar() {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(Math.min(total - 1, at + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, at - 1)) }
     else if (e.key === 'Enter' && !e.metaKey) { e.preventDefault(); run(at) }
+    else if (e.key === 'Enter' && mode === 'clip' && rows[at]?.save) { e.preventDefault(); rows[at].save!() }
+    else if (e.key === ' ' && mode === 'menu' && sel >= 0 && pm) { e.preventDefault(); setPeek(open ? null : pm.id) }
     else if (e.key === 'Tab' && rows[at]?.edit) { e.preventDefault(); rows[at].edit!() }
-    else if (e.key === 'Escape') { e.preventDefault(); if (mode !== 'menu') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
+    else if (e.key === 'Escape') { e.preventDefault(); if (open) setPeek(null); else if (mode !== 'menu') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
   }
 
-  const tile = (r: Row) => <span className="tile">{r.icon === 'dot' ? <Dot name={r.label} /> : <Icon name={r.icon} />}</span>
+  const tile = (r: Row) => <span className="tile">{r.thumb ? <img className="thumb" src={fileUrl(r.thumb)} alt="" /> : r.icon === 'dot' ? <Dot name={r.label} /> : <Icon name={r.icon} />}</span>
   const foot = (
     <footer>
       <span className="fprof" title="Active profile: new saves land here"><Dot name={active || 'user'} />{active}</span>
-      <span className="hint">{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> {THEN[then][1]} <Kbd>Esc</Kbd> back</> : mode === 'clip' ? <><Kbd>Enter</Kbd> save <Kbd>Tab</Kbd> edit <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
+      <span className="hint">{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> {THEN[then][1]} <Kbd>Esc</Kbd> back</> : mode === 'clip' ? <><Kbd>Enter</Kbd> paste <Kbd>Cmd Enter</Kbd> save <Kbd>Tab</Kbd> edit <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
     </footer>
   )
 
@@ -178,7 +190,7 @@ export default function Hotbar() {
               <li key={r.id} id={'h' + i} role="option" aria-selected={i === at} className={(i === at ? 'on' : '') + (!query && mode === 'menu' && (r.id === (rec.on ? 'rec' : 'recnote') || r.id === 'prof') ? ' split' : '')}
                 onMouseMove={() => setSel(i)} onClick={() => run(i)}>
                 {tile(r)}
-                <span className={'label' + (mode === 'clip' ? ' secret' : '')}>{r.label}</span>
+                <span className={'label' + (mode === 'clip' && !r.thumb ? ' secret' : '')}>{r.label}</span>
                 {r.detail}
               </li>
             ))}
@@ -192,6 +204,7 @@ export default function Hotbar() {
                   <li key={m.id} id={'h' + i} role="option" aria-selected={i === at} className={i === at ? 'on' : ''} onMouseMove={() => setSel(i)} onClick={() => run(i)}>
                     <span className="tile">{m.meta?.icon ? <img className="fav" src={fileUrl(m.meta.icon)} alt="" /> : m.app ? <AppIcon name={appName(m.app)} /> : <Icon name={m.kind} />}</span>
                     <span className="label">{m.meta?.transcribing ? <span className="busy">Transcribing...</span> : hl(chars(linkLabel(m) || m.content.slice(0, 400).replace(/\s+/g, ' '), 120), q)}</span>
+                    {m.meta?.pinned && <Icon name="pin" />}
                     {m.profile !== active && <span className="peek"><Dot name={m.profile} />{m.profile}</span>}
                     <span className="peek">{ago(m.created_at)}</span>
                   </li>
@@ -199,6 +212,7 @@ export default function Hotbar() {
               })}
             </ul>
           )}
+          {open && <div className="peekbox">{open.kind === 'screenshot' && open.file ? <img src={'/api/thumb/' + open.file} alt="" /> : chars(open.kind === 'link' ? [open.meta?.url, open.meta?.link?.title].filter(Boolean).join('\n') || open.content : open.content, 1200)}</div>}
         </>
       )}
       {foot}

@@ -2,8 +2,9 @@ import { api, type Ctx } from './api'
 
 type Msg =
   | { type: 'hide' | 'quit' }
+  | { type: 'paste'; detail?: string }
   | { type: 'saved' | 'error'; label?: string; detail?: string; kind?: string }
-  | { type: 'capture' | 'area'; note?: string }
+  | { type: 'capture' | 'area'; note?: string; record?: boolean }
   | { type: 'openMain'; query?: string }
   | { type: 'recording'; on: boolean }
   | { type: 'resize'; height: number }
@@ -14,7 +15,7 @@ type Msg =
 declare global {
   interface Window {
     webkit?: { messageHandlers?: { umm?: { postMessage(m: Msg): void } } }
-    ummShow?: (c: Ctx) => void
+    ummShow?: (c: Ctx, mode?: string) => void
     ummSettings?: (s: { loginItem?: 'on' | 'approval' | 'off' | 'missing'; version?: string; accessibility?: boolean }) => void
     ummFolder?: (path: string) => void
     ummDrop?: (d: { paths: string[] }) => void
@@ -26,8 +27,8 @@ const handler = window.webkit?.messageHandlers?.umm
 export const native = !!handler
 
 // Swift may call these before React mounts, so keep the last call until a view takes it.
-export const pending: { show?: Ctx; open?: { query?: string } } = {}
-window.ummShow = c => { pending.show = c }
+export const pending: { show?: Ctx; mode?: string; open?: { query?: string } } = {}
+window.ummShow = (c, mode) => { pending.show = c; pending.mode = mode }
 window.ummOpen = o => { pending.open = o }
 
 export function send(m: Msg) {

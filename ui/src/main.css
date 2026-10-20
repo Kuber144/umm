@@ -109,6 +109,7 @@ h1 { font-size: 15px; line-height: 19px; font-weight: 700; overflow: hidden; tex
 .kind .ic { width: 14px; height: 14px; }
 .l1, .l2 { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .l1 b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 500; line-height: 18px; }
+.l1 > .ic { width: 11px; height: 11px; color: var(--teal-ink); }
 .l1 .dot { width: 7px; height: 7px; margin: 0; }
 time { flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .l2 { font-size: 12px; line-height: 17px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; display: block; }

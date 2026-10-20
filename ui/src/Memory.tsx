@@ -11,6 +11,7 @@ export type Act = {
   save: (it: Item, content: string) => Promise<void>
   note: (it: Item, note: string) => Promise<void>
   zoom: (it: Item) => void
+  pin: (it: Item, on: boolean) => void
   shot: (it: Item, what: 'copy' | 'open' | 'reveal') => void
 }
 
@@ -116,7 +117,7 @@ export const Row = memo(function Row({ it, i, q, on, cur, all, onPick, onOpen }:
     <li ref={el} id={'m' + it.id} role="option" aria-selected={on} className={'row ' + it.kind + (on ? ' on' : '') + (cur ? ' cur' : '')}
       onMouseDown={e => e.shiftKey && e.preventDefault()} onClick={e => onPick(i, e)} onDoubleClick={() => onOpen(it)}>
       <span className="lead"><Glyph it={it} /></span>
-      <span className="l1"><b>{title}</b>{all && <Dot name={it.profile} />}<time data-tip={full(it.created_at)}>{stamp(it.created_at)}</time></span>
+      <span className="l1"><b>{title}</b>{all && <Dot name={it.profile} />}{it.meta?.pinned && <Icon name="pin" />}<time data-tip={full(it.created_at)}>{stamp(it.created_at)}</time></span>
       <span className="l2">{sub}</span>
     </li>
   )
@@ -170,6 +171,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     lp && ['reveal', 'Open link', 'Cmd O', () => send({ type: 'openExternal', url: lp.url })],
     (it.file && shot || it.kind === 'path') && ['path', 'Show in Finder', 'Cmd Shift R', () => (shot ? act.shot(it, 'reveal') : act.reveal(it))],
     ['edit', noted ? (it.note ? 'Edit note' : 'Add note') : 'Edit', 'Cmd E', () => setEditing(true)],
+    ['pin', it.meta?.pinned ? 'Unpin' : 'Pin to top', 'Cmd D', () => act.pin(it, !it.meta?.pinned)],
   ] as Maybe<Tool>[]).filter(Boolean) as Tool[]
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -223,6 +225,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     mcp ? ['Agent', <><AppIcon name={m.agent ?? 'Agent'} />{m.agent ?? 'Agent'}<span className="dim">{m.agent_version}</span></>]
       : from && ['App', <><AppIcon name={from} />{from}{!shot && <span className="dim">{winTitle(it.app)}</span>}</>],
     m?.url && ['Page', <QuietUrl url={m.url} />],
+    m?.shot && ['Screenshot', <span>Taken with screenshot {m.shot}</span>],
     m?.cwd && [mcp ? 'Project' : 'Folder', <span data-tip={m.cwd}>{home(m.cwd)}</span>],
     !mcp && src && ['Saved with', src[1]],
     ['Profile', <><Dot name={it.profile} />{it.profile}</>],

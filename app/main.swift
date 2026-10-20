@@ -4,7 +4,7 @@ import Carbon
 
 final class Panel: NSPanel { override var canBecomeKey: Bool { true } }
 
-var onHotKey: (() -> Void)?
+var onHotKey: ((UInt32) -> Void)?  // hotkey id: 1 is the hotbar, 2 the clipboard history
 
 // main window: dropped files go to the page as paths instead of WebKit opening them. Text drops stay with WebKit
 final class DropView: WKWebView {
@@ -99,10 +99,16 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         hotbar.delegate = self
 
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        onHotKey = { [weak self] in self?.toggle() }
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in onHotKey?(); return noErr }, 1, &spec, nil, nil)
+        onHotKey = { [weak self] id in self?.toggle(clip: id == 2) }
+        InstallEventHandler(GetApplicationEventTarget(), { _, e, _ in
+            var id = EventHotKeyID()
+            GetEventParameter(e, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+            onHotKey?(id.id)
+            return noErr
+        }, 1, &spec, nil, nil)
         var ref: EventHotKeyRef?
         RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | shiftKey), EventHotKeyID(signature: 0x756d6d20, id: 1), GetApplicationEventTarget(), 0, &ref)
+        RegisterEventHotKey(UInt32(kVK_ANSI_V), UInt32(controlKey | shiftKey), EventHotKeyID(signature: 0x756d6d20, id: 2), GetApplicationEventTarget(), 0, &ref)
 
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
 
@@ -166,7 +172,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
 
     // MARK: hotbar
 
-    func toggle() {
+    func toggle(clip: Bool = false) {
         if hotbar.isVisible { return hideHotbar() }
         // fetch before activating so the frontmost app is still the user's
         DispatchQueue.global().async {
@@ -174,7 +180,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             let path = "/api/context" + (self.pageURL().flatMap { $0.count < 4000 ? $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) : nil }.map { "?url=" + $0 } ?? "")
             let first = backend.request("GET", path, wait: 2)
             let r = first?.0 == 200 ? first : backend.request("GET", path, wait: 2) // the page breaks on "{}", so try twice
-            DispatchQueue.main.async { self.showHotbar(r?.0 == 200 ? String(decoding: r!.2, as: UTF8.self) : "{}") }
+            DispatchQueue.main.async { self.showHotbar(r?.0 == 200 ? String(decoding: r!.2, as: UTF8.self) : "{}", clip: clip) }
         }
     }
 
@@ -202,7 +208,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         return nil
     }
 
-    func showHotbar(_ ctx: String) {
+    func showHotbar(_ ctx: String, clip: Bool = false) {
         let c = (try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any]
         lastApp = c?["app"] as? String ?? ""
         lastURL = c?["url"] as? String
@@ -222,7 +228,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         hotbar.makeKeyAndOrderFront(nil)
         if !still { NSAnimationContext.runAnimationGroup { $0.duration = 0.12; hotbar.animator().alphaValue = 1; hotbar.animator().setFrame(end, display: true) } }
         hotbar.makeFirstResponder(hotbarView)
-        hotbarView.evaluateJavaScript("window.ummShow?.(\(ctx))")
+        hotbarView.evaluateJavaScript("window.ummShow?.(\(ctx), \(clip ? "\"clip\"" : "undefined"))")
     }
 
     func hideHotbar(restore: Bool = true) {
@@ -280,6 +286,13 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         guard let d = m.body as? [String: Any], let t = d["type"] as? String else { return }
         switch t {
         case "hide": hideHotbar()
+        case "paste":  // the entry is on the clipboard already. With Accessibility, press Cmd+V in the app that gets focus back
+            hideHotbar(); play("saved")
+            let ax = AXIsProcessTrusted()
+            card(ax ? "Pasted" : "Copied to clipboard", d["detail"] as? String ?? (ax ? nil : "Allow Accessibility in Settings to paste for you"), icon: "doc.on.clipboard")
+            if ax { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                for down in [true, false] { let e = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: down); e?.flags = .maskCommand; e?.post(tap: .cghidEventTap) }
+            } }
         case "saved":
             hideHotbar(); play("saved")
             let icons = ["note": "text.alignleft", "clip": "doc.on.clipboard", "image": "photo", "files": "doc.on.doc"]
@@ -288,7 +301,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         case "capture", "area":
             hideHotbar()
             let note = (d["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { self.capture(area: t == "area", note: note) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { self.capture(area: t == "area", note: note, record: d["record"] as? Bool == true) }
         case "openMain": hideHotbar(restore: false); showMain(d["query"] as? String)
         case "recording": recording(d["on"] as? Bool == true)
         case "resize":
@@ -382,7 +395,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     }
 
     // the message from the page and the menu item both end here. A repeat of the current state does nothing
-    func recording(_ on: Bool) {
+    func recording(_ on: Bool, quiet: Bool = false) {
         guard on != (recTimer != nil) else { return }
         recTimer?.invalidate()
         recTimer = nil
@@ -399,6 +412,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         }
         play(on ? "rec-start" : "rec-stop")
         if on { ring(.systemRed) }
+        if quiet { return }
         card(on ? "Recording" : "Recording saved", on ? "Stop from the menu bar or the hotbar" : "Transcribing, in \(lastProfile)", icon: on ? "mic.fill" : "waveform", warn: on)
     }
 
@@ -409,7 +423,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         }
     }
 
-    func capture(area: Bool, note: String?) {
+    func capture(area: Bool, note: String?, record: Bool = false) {
         var b: [String: Any] = ["app": lastApp, "area": area]
         if let n = note { b["note"] = n }
         if !area { play("shutter") } // the sound cannot land in the image
@@ -427,8 +441,21 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
                 }
                 if r?.0 != 200 { self.play("error") } else if j?["id"] is Int {
                     if area { self.play("shutter") }
-                    self.card("Screenshot saved", (note == nil ? "" : "with your note, ") + "in \(self.lastProfile)", image: img)
+                    self.card(record ? "Screenshot saved, recording" : "Screenshot saved", (note == nil ? "" : "with your note, ") + "in \(self.lastProfile)", image: img)
+                    if record { self.startRecording(shot: j?["id"] as! Int) }
                 }
+            }
+        }
+    }
+
+    func startRecording(shot: Int) {
+        var meta: [String: Any] = ["source": "hotbar", "shot": shot]
+        if let u = lastURL { meta["url"] = u }
+        let body = (try? JSONSerialization.data(withJSONObject: ["app": lastApp, "meta": meta])) ?? Data()
+        DispatchQueue.global().async {
+            let r = backend.request("POST", "/api/record/start", headers: ["Content-Type": "application/json"], body: body)
+            DispatchQueue.main.async {
+                if r?.0 == 200 { self.recording(true, quiet: true) } else { self.play("error"); self.card("Could not start recording", icon: "exclamationmark.triangle.fill", warn: true) }
             }
         }
     }

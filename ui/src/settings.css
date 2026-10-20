@@ -12,7 +12,7 @@
 .lbl b { font-weight: 500; }
 .lbl span { color: var(--ink-3); font-size: 12px; line-height: 16px; }
 .lbl code { font: 11.5px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
-.ctl { display: flex; justify-content: flex-end; align-items: center; min-width: 0; }
+.ctl { display: flex; gap: 8px; justify-content: flex-end; align-items: center; min-width: 0; }
 .wide .ctl, .srow:has(.move) .ctl { justify-content: flex-start; }
 .chips, .apps { display: flex; flex-wrap: wrap; gap: 4px; }
 .srow .seg button { min-width: 64px; font-size: 13px; }

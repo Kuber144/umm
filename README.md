@@ -50,7 +50,7 @@ It makes a self-signed certificate named "umm local signing" in your login keych
 
 ## Using it
 
-The hotbar opens with `Ctrl+Shift+Space`.
+The hotbar opens with `Ctrl+Shift+Space`. `Ctrl+Shift+V` opens it on the clipboard history: type to filter, `Enter` pastes the entry into the app you were in (with the Accessibility permission, else it is copied and you press `Cmd+V`), `Cmd+Enter` keeps it as a memory.
 
 - Type to filter the rows and to see matching memories below them. `Enter` on a memory copies it.
 - Up and Down pick a row, `Enter` runs it.
