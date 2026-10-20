@@ -16,6 +16,7 @@ import db
 import record
 
 app = FastAPI()
+db.embed_later()  # backfill items saved before search by meaning existed, or while the model was missing
 
 Nonempty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 # "*" means all profiles in GET /api/items, so it can't be a profile name
@@ -66,8 +67,8 @@ def front_window():
 
 @app.get("/api/items")
 def items(q: str = "", profile: str = "", kind: str = "", app: str = "", since: str = "", until: str = "",
-          sort: str = "", limit: int = 50, offset: int = 0):
-    return db.search(q, profile or db.active_profile(), kind, max(0, min(limit, 200)), offset, app, since, until, sort)
+          sort: str = "", limit: int = 50, offset: int = 0, mode: str = "hybrid"):
+    return db.search(q, profile or db.active_profile(), kind, max(0, min(limit, 200)), offset, app, since, until, sort, mode=mode)
 
 
 @app.get("/api/apps")
