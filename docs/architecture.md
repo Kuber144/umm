@@ -35,7 +35,7 @@ The data folder defaults to `~/Library/Application Support/umm`. The backend, th
 
 On the first start with no pointer and no database in the default folder, `db.py` moves an old `<repo>/data` there, all but `umm.sock` and `umm.log`, and logs it.
 
-`POST /api/storage/move` copies the folder to a new place, checks the copied database has every item, writes the pointer, deletes the old folder and exits with status 0. The app then restarts the backend at the new place. It first waits for writes already in flight (a screenshot being read, say). During the move other writes get 503, and MCP writes wait on the database lock. An MCP server that is already running sees the pointer change on its next message and reopens at the new folder.
+`POST /api/storage/move` copies the folder to a new place, checks the copied database has every item, writes the pointer, deletes the old folder and exits with status 0. The app then restarts the backend at the new place. It first waits for writes already in flight (a screenshot being read, say). During the move other writes get 503, and MCP writes wait on the database lock. Once the copy is checked, the move sets `PRAGMA user_version = 1` in the old database. Every write in `db.py` reads it before it commits, so an MCP write that waited on the lock fails with "umm moved its data folder, try again" and does not land in the deleted database. An MCP server that is already running sees the pointer change on its next message and reopens at the new folder, so the retry lands there.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
 

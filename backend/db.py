@@ -75,6 +75,15 @@ if db.execute("SELECT 1 FROM pragma_table_info('items') WHERE name = 'vec'").fet
     else:
         db.execute(f"CREATE VIRTUAL TABLE items USING fts5({SCHEMA})")
 COLS = "rowid AS id, profile, kind, content, file, app, meta, created_at"
+MOVED = 1  # PRAGMA user_version of a database the data folder moved away from
+
+
+def commit():
+    """Commits a write, unless the data folder moved while it waited for the lock. Else it would land in the old, deleted database."""
+    if db.execute("PRAGMA user_version").fetchone()[0] == MOVED:
+        db.rollback()
+        raise sqlite3.OperationalError("umm moved its data folder, try again")
+    db.commit()
 
 
 def row(r):
@@ -107,7 +116,7 @@ def profiles():
 @locked
 def rename_profile(old, new):
     db.execute("UPDATE items SET profile = ? WHERE profile = ?", (new, old))
-    db.commit()
+    commit()
     EXTRA.write_text("\n".join(n for n in {*extra(), new} - {old, ""}))
     if active_profile() == old:
         PROFILE.write_text(new)
@@ -138,7 +147,7 @@ def add(content, kind=None, file=None, app=None, profile=None, meta=None):
     cur = db.execute("INSERT INTO items(profile, kind, content, file, app, meta, created_at) "
                      "VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
                      (profile, kind, content, file, app, json.dumps(meta) if meta else None))
-    db.commit()
+    commit()
     if cur.lastrowid and kind == "link":
         enrich_later(cur.lastrowid, content)
     embed_later()
@@ -171,7 +180,7 @@ def enrich(id, url):
                        ("\n" + "\n".join(info.values()), json.dumps(info), icon, id))
         else:
             db.execute(f"UPDATE items SET meta = json_set(coalesce(meta, '{{}}'), '$.tried', 1) WHERE rowid = ? AND {TODO}", (id,))
-        db.commit()
+        commit()
     if info:
         embed_later()
 
@@ -193,7 +202,7 @@ def update(id, content=None, profile=None):
         db.execute("UPDATE items SET content = ?, vec = NULL WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
     if profile:
         db.execute("UPDATE items SET profile = ? WHERE rowid = ?", (profile, id))
-    db.commit()
+    commit()
     if content is not None and (r := get(id)) and r["kind"] == "link":
         enrich_later(id, content)
     embed_later()
@@ -214,7 +223,7 @@ def embed_pending():
             with lock:
                 for (id, c), v in zip(rows, vecs):
                     db.execute("UPDATE items SET vec = ? WHERE rowid = ? AND content = ?", (v, id, c))  # skips an item edited meanwhile
-                db.commit()
+                commit()
 
 
 def embed_later():
@@ -333,7 +342,7 @@ def expire(days):
         (FILES / f).unlink(missing_ok=True)
         thumb(f).unlink(missing_ok=True)
         db.execute("UPDATE items SET file = NULL WHERE rowid = ?", (id,))
-    db.commit()
+    commit()
 
 
 @locked
@@ -343,12 +352,12 @@ def delete(id):
         (FILES / row[0]).unlink(missing_ok=True)
         thumb(row[0]).unlink(missing_ok=True)
     db.execute("DELETE FROM items WHERE rowid = ?", (id,))
-    db.commit()
+    commit()
 
 
 @locked
 def copy_to(path):
-    """Backs up the database to path under the write lock, so MCP servers can't write meanwhile, checks it opens and writes the pointer."""
+    """Backs up the database to path under the write lock, so MCP servers can't write meanwhile, checks it opens, writes the pointer and marks the old one MOVED."""
     db.execute("BEGIN IMMEDIATE")
     try:
         src, dst = sqlite3.connect(DATA / "umm.db"), sqlite3.connect(path / "umm.db")  # a backup from db itself waits forever on its own lock
@@ -359,6 +368,8 @@ def copy_to(path):
         if n != db.execute("SELECT count(*) FROM items").fetchone()[0]:
             raise sqlite3.DatabaseError(f"the copy in {path} has {n} items")
         POINTER.write_text(str(path))
+        db.execute(f"PRAGMA user_version = {MOVED}")
+        db.commit()
     finally:
         db.rollback()
 

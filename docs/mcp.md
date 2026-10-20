@@ -1,6 +1,6 @@
 # MCP server
 
-`backend/mcp_server.py` lets AI agents search and add to umm. It runs over stdio and reads `umm.db` in the data folder directly, so the app does not need to be running. It finds the folder like the backend does (`UMM_DATA`, else the pointer in `~/Library/Application Support/umm/location`, else that folder), and follows a move made in Settings. `capture_screenshot` calls the app over `~/Library/Application Support/umm/umm.sock`.
+`backend/mcp_server.py` lets AI agents search and add to umm. It runs over stdio and reads `umm.db` in the data folder directly, so the app does not need to be running. It finds the folder like the backend does (`UMM_DATA`, else the pointer in `~/Library/Application Support/umm/location`, else that folder), and follows a move made in Settings. A write caught by a move fails with "umm moved its data folder, try again", and the retry goes to the new folder. `capture_screenshot` calls the app over `~/Library/Application Support/umm/umm.sock`.
 
 ## Setup
 
