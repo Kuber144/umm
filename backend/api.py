@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly
 
 import db
+import embed
 import record
 import settings
 
@@ -364,6 +365,8 @@ def move_storage(f: Folder):
     moving.set()
     while writes > 1:  # this request is one
         time.sleep(0.05)
+    if embed.proc:  # its first-run model download would go on into the old folder after the delete
+        embed.proc.kill()
     try:
         shutil.copytree(old, new, dirs_exist_ok=True, ignore=lambda d, names: db.KEEP | {"umm.db", "umm.db-wal", "umm.db-shm"} if d == str(old) else ())
         db.copy_to(new)
