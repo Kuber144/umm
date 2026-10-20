@@ -27,7 +27,9 @@ def list_profiles() -> list[dict]:
 @mcp.tool()
 def remember(content: str, profile: str = "") -> int:
     """Save a note, folder path, or link to the user's memory. Empty profile saves to the `agent` profile."""
-    return db.add(content, profile=profile or "agent")
+    if profile.strip() == "*":
+        raise ValueError('"*" means all profiles and can\'t be a profile name')
+    return db.add(content, profile=profile.strip() or "agent")
 
 
 if __name__ == "__main__":

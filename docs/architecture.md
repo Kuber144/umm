@@ -1,6 +1,6 @@
 # Architecture
 
-umm is one macOS app, `umm.app`. It owns the `Ctrl+Shift+Space` hotkey, shows the hotbar and the main window, and runs the Python backend as a child process. Quitting the app kills the backend. That is the kill switch.
+umm is one macOS app, `umm.app`. It owns the `Ctrl+Shift+Space` hotkey, shows the hotbar and the main window, and runs the Python backend as a child process. Quitting the app kills the backend. That is the kill switch. If the backend dies on its own, the app restarts it after 1s, 2s, 4s and so on up to 30s. On start it kills any orphaned backend still holding the socket.
 
 No TCP ports. The backend listens on a Unix socket at `data/umm.sock`, so it can't clash with dev servers.
 
@@ -24,8 +24,10 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.flac`), `profile.txt`, `umm.log`, `umm.sock`.
-- `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it.
+- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.flac`), `profile.txt`, `profiles.txt` (created profile names), `umm.log`, `umm.sock`.
+- `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild.
+
+The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
 
 ## Profiles
 
@@ -49,7 +51,7 @@ app:  "App: window title" of the app the user was in
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
          app filters by app name (the part before ":"). since/until are YYYY-MM-DD, inclusive.
-         sort: new | old | relevance. Default is relevance when q is set, else new.
+         sort: new | old | relevance. Default is relevance when q is set, else new. limit is capped at 200.
 GET    /api/apps?profile=                                -> [{app, count}]   app names for the filter, most used first
 POST   /api/items      {content, app?, profile?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile

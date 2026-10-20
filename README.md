@@ -1,49 +1,83 @@
-# umm (u might miss)
+<p align="center"><img src="assets/icon.svg" width="128" alt="umm icon"></p>
 
-Press `Ctrl+Shift+Space`, then `Enter`, and umm saves your screen with its text. The same menu saves your clipboard or a typed note. Later you ask Claude Code "where did I put the tax docs" and it searches what you saved.
+# umm
 
-It all runs on your Mac. OCR uses Apple Vision, and storage is one SQLite file in `data/`. It works the same in every app. Each saved item records the app and window title you were in, like the browser tab title or the Finder folder name.
+umm is a Mac app that keeps what you might miss later. Press `Ctrl+Shift+Space` from any app to save a screenshot with its OCR text, the clipboard, a typed note or a voice recording. Search it in the main window, or let Claude Code search it over MCP. Everything stays on your Mac in one SQLite file in `data/`. Each item records the app and window title you were in.
 
-## Start and stop
+## Install and run
 
 ```
-./start.sh   # builds what's missing, runs the backend and hotkey menu in the background
-./stop.sh    # kill switch, stops everything
+./start.sh   # builds build/umm.app if needed and opens it
+./stop.sh    # quits umm and its backend
 ```
 
-The menu also has a "Stop umm" row that runs `stop.sh`.
+`start.sh` needs `uv`, `npm` and the Xcode command line tools. umm lives in the menu bar and has no Dock icon until the main window opens.
 
-The first time you capture, macOS asks for Screen Recording permission. Grant it to the terminal app you ran `start.sh` from, then run `./stop.sh && ./start.sh`.
+On first use macOS asks for two permissions for umm.app:
 
-## Hotkey menu
+- Screen Recording, for screenshots.
+- Microphone, for recordings.
 
-`Ctrl+Shift+Space` opens it from any app. While umm runs it always gets this combo first.
+The app is signed ad hoc, so macOS treats every rebuild as a new app and may ask again. Allow it again if so. If a screenshot comes out blank, quit with `./stop.sh` and start again.
 
-- `Enter` takes a screenshot, which is the top row. You can keep Ctrl+Shift held.
-- Arrow keys pick another row, such as the clipboard. To save a folder path, copy it first (in Finder, `Cmd+Option+C`), then pick the clipboard row.
-- To save a note, type it and press `Enter`.
-- `Esc` closes the menu.
+## Hotbar
 
-A pop sound means it saved. A low thud means the backend isn't running.
+`Ctrl+Shift+Space` opens it over any app. `Enter` right away takes a screenshot, so the fast path is the hotkey, then `Enter`.
 
-## Web UI
+- Type to filter the rows and see matching memories below them. `Enter` on a memory copies it.
+- Up and Down pick a row. `Enter` runs it.
+- Rows: screenshot, save clipboard, write a note, start or stop recording, search, switch profile, open umm, quit.
+- In the note editor `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back.
+- `Esc` closes the hotbar. A pop sound means it saved, a low thud means it failed.
 
-http://localhost:8000. Search, browse, delete, and switch or create profiles. Hotkey saves go to whichever profile is active.
+## Main window
 
-## Claude Code and other agents
+Open it from the hotbar or the menu bar icon. The icon turns red while recording.
+
+- Profiles on the left, plus "All". `Cmd+1` to `Cmd+9` switch.
+- Search with `Cmd+K`. Filter by kind, app and date range. Sort by relevance, new or old.
+- Write a note or record your voice at the top. `Cmd+Enter` saves.
+- Move with Up, Down, `j` and `k`. `Enter` copies or opens, `Delete` removes.
+- Each item can be copied, edited, moved to another profile, deleted, or revealed in Finder when it is a path.
+
+## Profiles
+
+Every item belongs to one profile, and new saves go to the active one.
+
+- `user` is yours and is active by default.
+- `agent` is what Claude and other agents save over MCP.
+- Custom profiles are ones you create. You can rename them, delete them with their items, and move items between them. `user` and `agent` can't be renamed or deleted.
+
+## Claude Code
 
 ```
 claude mcp add umm -s user -- uv --directory /Users/kuberjain/Developer/personal/umm/backend run mcp_server.py
 ```
 
-Tools: `search_memory`, `remember`, `list_profiles`. An agent can keep its own profile by passing `profile="claude-code"` to `remember`. Search results for screenshots include the image path, so the agent can open the image when the OCR text isn't enough.
+Tools are `search_memory`, `remember` and `list_profiles`. `remember` saves to the `agent` profile unless you pass another. Screenshot results include an image path the agent can open.
+
+## Voice
+
+Recording is 16 kHz mono FLAC. Stopping starts transcription with local faster-whisper, model `small`, in a child process that exits afterwards to free memory. It uses the model from the HuggingFace cache and downloads it once if missing. The transcript is saved as a voice item next to the audio.
 
 ## Layout
 
 ```
-backend/   FastAPI app, MCP server, db.py (all SQL)
-menu/      hotkey menu, one Swift file
-ui/        React + Vite
-docs/      plan.md
-data/      umm.db, shots/, profile.txt, umm.log (created on first run)
+app/       Swift app, build.sh, Info.plist, icons
+backend/   FastAPI on a Unix socket, MCP server, db.py (all SQL), record.py
+ui/        React + Vite, the hotbar and the main window
+assets/    icon.svg and the menu bar icon source
+docs/      architecture.md, plan.md
+data/      umm.db, files/, profile.txt, profiles.txt, umm.log, umm.sock
+build/     umm.app
 ```
+
+## Dev notes
+
+- The app has no TCP port. The backend listens on `data/umm.sock`, and the app serves the UI through the `umm://` scheme.
+- UI changes need `cd ui && npm run build`. The backend serves `ui/dist` straight from disk, so no app rebuild is needed.
+- `cd ui && npm run dev` starts Vite on 5173 and proxies `/api` to the socket. Set `UMM_SOCK` to use another socket. Open `http://localhost:5173/#hotbar` for the hotbar view.
+- Swift changes rebuild on the next `./start.sh`. It skips the build when nothing in `app/` changed.
+- Run the binary to set env vars. `UMM_SHOW=main build/umm.app/Contents/MacOS/umm` opens the main window at launch, and `UMM_SHOW=hotbar` opens the hotbar after 2 seconds.
+- Build with `UMM_SWIFT_FLAGS="-D TEST" app/build.sh` to add test hooks. `SIGUSR1` toggles the hotbar and `UMM_JS` runs JavaScript in the hotbar page.
+- Logs are in `data/umm.log`.
