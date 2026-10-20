@@ -170,7 +170,7 @@ enrich_links:   default true, fetch title and description of saved links (not li
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
 clipboard_history: default 50, 0 to 500. How many copies, text or image, the backend keeps for GET /api/clipboard/history. 0 turns it off
-                and clears the list and the image files. A thread checks the pasteboard every second. Saved to clipboard.json after each change, written through a .tmp file
+                and clears the list and the image files. A thread checks the pasteboard four times a second. Saved to clipboard.json after each change, written through a .tmp file
 screenshot_days: default 0 (keep forever). A background thread runs at backend start and every 24 hours. It deletes the image
                 and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay.
                 It removes umm's copy only. An imported image's original file is left alone, and meta.path still names it

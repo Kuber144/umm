@@ -297,7 +297,7 @@ seen = [None]  # the pasteboard changeCount the watcher saw last. A restore sets
 
 def watch_clipboard():
     while True:
-        time.sleep(1)
+        time.sleep(0.25)  # a copy replaced within this time is missed. changeCount is microseconds
         n = settings.get()["clipboard_history"]
         with objc.autorelease_pool():
             changed, seen[0] = seen[0] != (c := NSPasteboard.generalPasteboard().changeCount()), c
