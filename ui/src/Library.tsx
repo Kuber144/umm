@@ -238,7 +238,9 @@ export default function Library() {
     const io = new IntersectionObserver(([e]) => {
       if (!e.isIntersecting || busy.current) return
       busy.current = true
+      const n = seq.current  // a page that arrives after a reload or another profile is dropped
       page(items.length).then(r => {
+        if (n !== seq.current) return
         setItems(l => [...l, ...r.filter(x => !l.some(y => y.id === x.id))]); setMore(r.length >= PAGE)
       }).finally(() => { busy.current = false })
     })
