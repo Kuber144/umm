@@ -14,6 +14,7 @@ from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListExc
 
 import db
 import record
+import settings
 
 app = FastAPI()
 
@@ -101,6 +102,8 @@ def context():
 @app.post("/api/capture")
 def capture(a: App | None = None):
     app_name = (a and a.app) or front_window()
+    if app_name.split(":")[0].strip().lower() in {x.strip().lower() for x in settings.get()["excluded_apps"]}:
+        raise HTTPException(403, f"{app_name.split(':')[0]} is in your excluded apps, nothing was captured")
     # jpg is ~9x smaller than png and OCR reads the same text. Microseconds keep parallel captures from sharing a file.
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
     subprocess.run(["screencapture", "-x", "-t", "jpg", str(db.FILES / name)], check=True)
@@ -108,6 +111,25 @@ def capture(a: App | None = None):
     with objc.autorelease_pool():
         text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
     return {"id": db.add(text, "screenshot", name, app_name)}
+
+
+@app.get("/api/settings")
+def get_settings():
+    return settings.get()
+
+
+@app.patch("/api/settings")
+def patch_settings(patch: dict):
+    try:
+        return settings.update(patch)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/storage")
+def storage():
+    size = sum(f.stat().st_size for f in db.DATA.rglob("*") if f.is_file())
+    return {"path": str(db.DATA), "bytes": size, "kinds": db.kinds()}
 
 
 @app.get("/api/profiles")
