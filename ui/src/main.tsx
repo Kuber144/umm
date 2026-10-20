@@ -15,4 +15,7 @@ function Root() {
   return hotbar ? <Hotbar /> : <Library />
 }
 
+// Keys for an input method reach no shortcut. WebKit sends the Enter that confirms the text with keyCode 229.
+window.addEventListener('keydown', e => { if (e.isComposing || e.keyCode === 229) e.stopImmediatePropagation() }, true)
+
 createRoot(document.getElementById('root')!).render(<StrictMode><Root /></StrictMode>)

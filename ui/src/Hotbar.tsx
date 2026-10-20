@@ -117,7 +117,6 @@ export default function Hotbar() {
   const back = () => { setMode('menu'); setQ(''); setSel(-1) }
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.nativeEvent.isComposing) return  // Enter confirms an input method's text, it must not run a row
     if (mode === 'note') {
       if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); saveNote() }
       else if (e.key === 'Escape') { e.preventDefault(); back() }
