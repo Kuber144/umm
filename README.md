@@ -34,7 +34,7 @@ The first run installs the dependencies and builds `build/umm.app`, which takes 
 
 ## Permissions
 
-- Screen Recording lets umm take screenshots and read the front window's title. Without it screenshots come out blank.
+- Screen Recording lets umm take screenshots and read the front window's title. Without it a screenshot fails, and the menu bar shows "Allow Screen Recording" for a moment.
 - Microphone lets umm record your voice when you start a recording.
 
 umm never uses either one on its own. A screenshot happens when you ask for it, and the mic is on only during a recording.
@@ -122,7 +122,7 @@ See [docs/cli.md](docs/cli.md) for every command, zsh completion and flags.
 
 - Everything is local. Items, screenshots and recordings stay in `data/` on your Mac. OCR uses Apple Vision and transcription runs locally.
 - umm has no account, no telemetry and no TCP port. The backend listens on a Unix socket.
-- Two things use the network. When you save a link, umm fetches that page's title, description and icon, and for tweets and YouTube links it asks their public oEmbed endpoints. Turn it off with "Look up links" in Settings. The first transcription downloads the Whisper model from Hugging Face.
+- Two things use the network. When you save a link, umm fetches that page's title, description and icon, and for tweets and YouTube links it asks their public oEmbed endpoints. Links with a token, key, signature or similar parameter in the query are never fetched. Turn it off with "Look up links" in Settings. The first transcription downloads the Whisper model from Hugging Face.
 - Agents you connect can read your memories. That is their job, so connect only agents you trust.
 
 ## Data and uninstall
@@ -141,7 +141,7 @@ To remove umm:
 
 ## Troubleshooting
 
-- Screenshots are blank or fail. Screen Recording is not granted to umm. Enable it in System Settings, Privacy and Security, Screen Recording, then run `./stop.sh` and `./start.sh`. After a rebuild you may need to toggle it off and on.
+- Screenshots fail. Screen Recording is not granted to umm. Enable it in System Settings, Privacy and Security, Screen Recording, then run `./stop.sh` and `./start.sh`. After a rebuild you may need to toggle it off and on.
 - Anything else broken. Read `data/umm.log`.
 - A keychain prompt appears during the build. That is `codesign` using the signing certificate. Click Always Allow.
 - Permissions keep resetting after rebuilds. Run `scripts/setup-signing.sh`.
