@@ -148,6 +148,9 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
       </header>
       <div className="scroll">{s && <div className="sets">
         <Group title="General">
+          <Row label="Appearance" hint="Light, dark, or the same as macOS.">
+            <Pick value={s.appearance ?? 'system'} set={v => { patch({ appearance: v as Conf['appearance'] }); send({ type: 'appearance', mode: v }) }} label="Appearance" options={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([value, label]) => ({ value, label }))} />
+          </Row>
           <Row label="Hotkey saves go to" hint="The profile new saves land in.">
             <Pick value={profiles.active} set={onActive} label="Profile for new saves" options={profiles.all.map(({ name }) => ({ value: name, text: name, label: <><Dot name={name} />{name}</> }))} />
           </Row>

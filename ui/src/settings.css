@@ -1,6 +1,6 @@
 /* Settings and Connections: titled groups of rows, label left and control right, like System Settings. */
 .settings .scroll, .connections .scroll, .scroll.welcome { padding: 8px 24px 64px; }
-.sets { max-width: 620px; margin: 0 auto; }
+.sets { animation: enter .26s var(--ease); max-width: 620px; margin: 0 auto; }
 .sets section { padding-top: 20px; }
 .sets h2 { margin: 0 0 6px 2px; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink); }
 .sets .hint { margin: 0 0 10px; color: var(--ink-3); font-size: 12px; }
@@ -17,12 +17,12 @@
 .chips, .apps { display: flex; flex-wrap: wrap; gap: 4px; }
 .srow .seg button { min-width: 64px; font-size: 13px; }
 .apps input { height: 22px; width: 170px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font-size: 12px; }
-.apps input:focus { box-shadow: inset 0 0 0 1.5px var(--teal); }
-.switch { flex: none; width: 32px; height: 20px; padding: 2px; border: 0; border-radius: 10px; background: var(--fill); box-shadow: inset 0 0 0 1px var(--line-2); text-align: left; transition: background-color .15s; }
-.switch i { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fffdf7; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
-.switch.on { background: var(--teal); }
+.apps input:focus { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.switch { flex: none; width: 32px; height: 20px; padding: 2px; border: 0; border-radius: 10px; background: var(--fill); box-shadow: inset 0 0 0 1px var(--line-2); text-align: left; transition: background-color var(--soft), box-shadow var(--soft); }
+.switch i { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform var(--soft); }
+.switch.on { background: var(--accent); }
 .switch.on i { transform: translateX(12px); }
-.ok { display: inline-flex; align-items: center; gap: 4px; color: var(--teal-ink); font-size: 12px; font-weight: 500; }
+.ok { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-ink); font-size: 12px; font-weight: 500; }
 .ok .ic { width: 14px; height: 14px; }
 .cmd { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 4px 4px 10px; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
 .cmd code { flex: 1; min-width: 0; font: 11.5px/17px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; user-select: all; }
@@ -30,13 +30,13 @@
 .move { display: grid; gap: 8px; width: 100%; }
 .pathin { display: flex; gap: 6px; }
 .pathin input { flex: 1; min-width: 0; height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); font: 12px var(--mono); }
-.pathin input:focus { box-shadow: inset 0 0 0 1.5px var(--teal); }
+.pathin input:focus { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .move .to, .move .err { margin: 0; font-size: 12px; color: var(--ink-3); }
 .move .to code { font: 11.5px var(--mono); color: var(--ink); overflow-wrap: anywhere; }
-.move .err { color: var(--blush-ink); }
+.move .err { color: var(--red-ink); }
 .move .btns { justify-content: flex-end; margin: 0; }
 .moving { display: grid; gap: 6px; font-size: 12px; color: var(--ink-2); }
-.moving .bar { display: block; height: 4px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--teal), transparent) 0 0 / 40% 100% no-repeat, var(--line-2); animation: slide 1.2s linear infinite; }
+.moving .bar { display: block; height: 4px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat, var(--line-2); animation: slide 1.2s linear infinite; }
 @keyframes slide { from { background-position: -60% 0, 0 0; } to { background-position: 160% 0, 0 0; } }
 .about { display: grid; justify-items: center; gap: 2px; margin: 28px 0 0; font-size: 12px; font-weight: 500; color: var(--ink-2); }
 .about span { font-weight: 400; color: var(--ink-3); }

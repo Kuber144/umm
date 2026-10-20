@@ -1,37 +1,37 @@
-/* Colours come from assets/icon.svg: teal tile, cream body, ink outline, blush cheeks, drop blue.
-   Surfaces step from the sidebar (deepest) to the list, the preview and popovers (highest).
-   Light is cream paper with ink text. Dark is the ink outline as a tonal ramp with cream text.
-   Text tokens pass WCAG AA (4.5:1) on every surface and on the selection tint. */
+/* Neutral surfaces like current macOS, with the system blue accent and system red. Light is white and the system greys,
+   dark is Apple's graphite ramp. The sidebar and hotbar sit on a native material in the app (html.glass), so they are tinted, not solid.
+   Text tokens pass WCAG AA (4.5:1) on every surface and on the selection tint. Motion: --ease is a soft ease out for everything. */
 :root {
   color-scheme: light dark;
-  --side: #efe7d3; --paper: #f9f5ea; --card: #fffdf7; --sunk: #f1eadb; --fill: #e6dcc4;
-  --ink: #1f2a2e; --ink-2: #44514f; --ink-3: #535d59;
-  --line: rgba(31, 42, 46, .08); --line-2: rgba(31, 42, 46, .16); --sep: rgba(31, 42, 46, .13);
-  --hover: rgba(31, 42, 46, .045);
-  --teal: #5fb3a5; --teal-ink: #22695e; --teal-tint: rgba(95, 179, 165, .2);
-  --sel: rgba(95, 179, 165, .24); --sel-dim: rgba(31, 42, 46, .075); --raised: #fffefa;
-  --menu: rgba(252, 250, 243, .96); --tip: #fbf8f0;
-  --blush: #f29a8a; --blush-ink: #9c4036; --blush-tint: rgba(242, 154, 138, .22);
-  --drop: #9ad8f0; --on-teal: #1f2a2e; --edge: #1f2a2e;
-  --mark: rgba(154, 216, 240, .6);
-  --lift: 0 1px 2px rgba(31, 42, 46, .06), 0 8px 24px -12px rgba(31, 42, 46, .28);
+  --side: #eeeef1; --paper: #ffffff; --card: #ffffff; --sunk: #f3f3f6; --fill: #e5e5ea;
+  --ink: #1d1d1f; --ink-2: #424245; --ink-3: #6e6e73;
+  --line: rgba(0, 0, 0, .07); --line-2: rgba(0, 0, 0, .12); --sep: rgba(0, 0, 0, .1);
+  --hover: rgba(0, 0, 0, .04);
+  --accent: #007aff; --accent-ink: #0066cc; --accent-tint: rgba(0, 122, 255, .12);
+  --sel: rgba(0, 122, 255, .16); --sel-dim: rgba(0, 0, 0, .06); --raised: #ffffff;
+  --menu: rgba(246, 246, 248, .86); --tip: #ffffff;
+  --red: #ff3b30; --red-ink: #d70015; --red-tint: rgba(255, 59, 48, .12);
+  --drop: #64d2ff; --on-accent: #ffffff;
+  --mark: rgba(255, 204, 0, .38);
+  --lift: 0 1px 2px rgba(0, 0, 0, .05), 0 10px 30px -10px rgba(0, 0, 0, .22);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --round: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --quick: .12s ease-out;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --quick: .14s var(--ease);
+  --soft: .24s var(--ease);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --side: #121a1d; --paper: #172125; --card: #1c282c; --sunk: #223136; --fill: #2b3c41;
-    --ink: #eee7d4; --ink-2: #c2bcab; --ink-3: #98a19b;
-    --line: rgba(238, 231, 212, .08); --line-2: rgba(238, 231, 212, .15); --sep: #0a1012;
-    --hover: rgba(238, 231, 212, .045);
-    --teal: #6cc0b1; --teal-ink: #84d2c4; --teal-tint: rgba(108, 192, 177, .15);
-    --sel: rgba(108, 192, 177, .2); --sel-dim: rgba(238, 231, 212, .08); --raised: #263439;
-    --menu: rgba(36, 50, 55, .96); --tip: #2a393e;
-    --blush-ink: #f4a898; --blush-tint: rgba(242, 154, 138, .16);
-    --on-teal: #142024; --edge: #0d1416;
-    --mark: rgba(154, 216, 240, .26);
+    --side: #2b2b2e; --paper: #1e1e20; --card: #252528; --sunk: #2c2c2f; --fill: #3a3a3d;
+    --ink: #f5f5f7; --ink-2: #d1d1d6; --ink-3: #98989d;
+    --line: rgba(255, 255, 255, .07); --line-2: rgba(255, 255, 255, .12); --sep: rgba(0, 0, 0, .55);
+    --hover: rgba(255, 255, 255, .05);
+    --accent: #0a84ff; --accent-ink: #4da3ff; --accent-tint: rgba(10, 132, 255, .2);
+    --sel: rgba(10, 132, 255, .26); --sel-dim: rgba(255, 255, 255, .08); --raised: #3a3a3c;
+    --menu: rgba(40, 40, 42, .84); --tip: #2c2c2e;
+    --red: #ff453a; --red-ink: #ff6961; --red-tint: rgba(255, 69, 58, .18);
+    --mark: rgba(255, 214, 10, .3);
     --lift: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 32px -12px rgba(0, 0, 0, .6);
   }
 }
@@ -41,30 +41,42 @@ html[data-view=hotbar], html[data-view=hotbar] body { background: transparent; }
 body { overflow: hidden; }
 button, input, select, textarea { font: inherit; letter-spacing: inherit; color: inherit; }
 button { cursor: pointer; }
-:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+/* Motion: hover, press and selection ease in a beat instead of snapping. Lists move faster so arrow keys never trail. Menus keep macOS's instant highlight. */
+button, .row, .prof, .chip, .card, .search, .tile, .rows li, .mems li { transition: background-color var(--quick), color var(--quick), box-shadow var(--quick), opacity var(--quick), transform var(--quick); }
+.row, .rows li, .mems li, .tile { transition-duration: 80ms; }
+.menu button { transition: none; }
+.btn:active:not(:disabled), .tbtn:active, .tool:active, .icon:active, .pp:active, .seg button:active { transform: scale(.96); }
+@keyframes enter { from { opacity: 0; transform: translateY(4px); } }
+@keyframes pop { from { opacity: 0; transform: scale(.96); } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes soften { from { opacity: .35; } }
+/* In the app a macOS material sits behind the page (html.glass). The main window's sidebar and the whole hotbar let it through. */
+html.glass[data-view=main], html.glass[data-view=main] body, .glass .shell { background: transparent; }
+.glass .side { background: color-mix(in srgb, var(--side) 40%, transparent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 input:focus-visible, textarea:focus-visible { outline: none; }
-::selection { background: var(--teal-tint); }
+::selection { background: var(--accent-tint); }
 mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; margin: 0 -1px; }
 .dim { color: var(--ink-3); }
 .gap { flex: 1; }
 .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; vertical-align: middle; margin-right: 8px; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .22); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; vertical-align: middle; margin-right: 8px; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15); }
 kbd { font: 500 11px/16px var(--font); color: var(--ink-3); border-radius: 4px; padding: 0 5px; margin-left: 4px; white-space: nowrap; box-shadow: inset 0 0 0 1px var(--line-2); }
-.recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--blush); display: inline-block; flex: none; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .4); }
+.recdot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); display: inline-block; flex: none; box-shadow: none; }
 @keyframes pulse { 50% { opacity: .3; } }
 .on .recdot { animation: pulse 1.2s ease-in-out infinite; }
 .busy { color: var(--ink-3); font-weight: 400; }
-.busy::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: var(--teal); animation: pulse 2s ease-in-out infinite; }
+.busy::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: var(--accent); animation: pulse 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .fav { flex: none; width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }
 /* app icons are drawn with their own margin, so they sit a little larger than line icons */
 .appic { flex: none; width: 16px; height: 16px; object-fit: contain; }
-.appic.mono { display: inline-grid; place-items: center; width: 14px; height: 14px; margin: 1px; border-radius: 4px; background: var(--blush); color: #1f2a2e; font: 700 7.5px/1 var(--round); letter-spacing: -.02em; font-style: normal; box-shadow: inset 0 0 0 1px rgba(31, 42, 46, .25); }
+.appic.mono { display: inline-grid; place-items: center; width: 14px; height: 14px; margin: 1px; border-radius: 4px; background: var(--red); color: #fff; font: 700 7.5px/1 var(--round); letter-spacing: -.02em; font-style: normal; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
 .livedot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #4cc38a; box-shadow: 0 0 0 2px color-mix(in srgb, #4cc38a 25%, transparent); }
 /* Shared controls: the window tooltip (Tips), pop-up menus and their pop-up buttons (Menu). */
-.tip { position: fixed; z-index: 40; display: flex; align-items: center; gap: 10px; max-width: 300px; padding: 3px 8px; border-radius: 6px; background: var(--tip); color: var(--ink); font-size: 12px; line-height: 17px; box-shadow: 0 0 0 .5px var(--line-2), 0 4px 14px -2px rgba(0, 0, 0, .2); pointer-events: none; overflow-wrap: anywhere; }
+.tip { animation: fade .14s var(--ease); position: fixed; z-index: 40; display: flex; align-items: center; gap: 10px; max-width: 300px; padding: 3px 8px; border-radius: 6px; background: var(--tip); color: var(--ink); font-size: 12px; line-height: 17px; box-shadow: 0 0 0 .5px var(--line-2), 0 4px 14px -2px rgba(0, 0, 0, .2); pointer-events: none; overflow-wrap: anywhere; }
 .tip kbd { margin: 0; padding: 0; box-shadow: none; font-size: 11.5px; color: var(--ink-3); }
-.menu { position: fixed; z-index: 30; display: grid; min-width: 150px; max-width: 320px; max-height: calc(100vh - 16px); overflow: auto; padding: 5px; border-radius: 9px; background: var(--menu); -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .18), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 12px 32px -8px rgba(0, 0, 0, .32), 0 2px 6px rgba(0, 0, 0, .08); outline: none; }
+.menu { animation: pop .16s var(--ease); transform-origin: top center; position: fixed; z-index: 30; display: grid; min-width: 150px; max-width: 320px; max-height: calc(100vh - 16px); overflow: auto; padding: 5px; border-radius: 9px; background: var(--menu); -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8); box-shadow: 0 0 0 .5px rgba(0, 0, 0, .18), inset 0 0 0 .5px rgba(255, 255, 255, .12), 0 12px 32px -8px rgba(0, 0, 0, .32), 0 2px 6px rgba(0, 0, 0, .08); outline: none; }
 .menu button { display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: none; color: var(--ink); font-size: 13px; text-align: left; white-space: nowrap; cursor: default; }
 .menu.checks button { padding-left: 6px; }
 .menu .ic { width: 13px; height: 13px; }
@@ -73,10 +85,10 @@ kbd { font: 500 11px/16px var(--font); color: var(--ink-3); border-radius: 4px; 
 .menu .appic { width: 16px; height: 16px; }
 .menu .dot { margin: 0 2px; }
 .menu .n { margin-left: auto; padding-left: 20px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }
-.menu button.at { background: var(--teal); color: var(--on-teal); }
+.menu button.at { background: var(--accent); color: var(--on-accent); }
 .menu button.at .n { color: inherit; }
-.menu .danger { color: var(--blush-ink); }
-.menu .danger.at { background: var(--blush); color: #1f2a2e; }
+.menu .danger { color: var(--red-ink); }
+.menu .danger.at { background: var(--red); color: #fff; }
 .menu button:disabled { color: var(--ink-3); opacity: .55; }
 .pick { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; height: 26px; padding: 0 5px 0 9px; border: 0; border-radius: 6px; background: var(--raised); color: var(--ink); text-align: left; box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 1px rgba(0, 0, 0, .05); }
 .pick .cur { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }

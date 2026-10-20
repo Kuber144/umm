@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import Hotbar from './Hotbar'
 import Library from './Library'
+import { native } from './bridge'
+
+if (native) document.documentElement.classList.add('glass')  // a macOS material sits behind the page, see glass() in app/main.swift
 
 function Root() {
   const [hotbar, setHotbar] = useState(location.hash === '#hotbar')

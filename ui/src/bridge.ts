@@ -8,6 +8,7 @@ type Msg =
   | { type: 'openMain'; query?: string }
   | { type: 'recording'; on: boolean }
   | { type: 'resize'; height: number }
+  | { type: 'appearance'; mode?: string }
   | { type: 'openExternal'; url: string }
   | { type: 'loginItem'; on: boolean }
   | { type: 'settings' | 'chooseFolder' | 'accessibility' }

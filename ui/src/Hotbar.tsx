@@ -45,12 +45,14 @@ export default function Hotbar() {
     // Swift sends {} when the context fetch fails, so every field gets a default. A half-written note survives a reopen.
     const show = (raw: Partial<Ctx>, mode?: string) => {
       const c: Ctx = { app: '', profile: '', clipboard: '', clipboard_kind: null, recording: { on: false, seconds: 0, transcribing: 0 }, ...raw }
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) root.current?.animate([{ opacity: 0, transform: 'scale(.985)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.22, 1, .36, 1)' })
       setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setArmed(false); setMems([]); setShown(n => n + 1)
       if (mode === 'clip') api.clipHistory().then(h => { setHist(h); setMode('clip') }, () => {})  // Ctrl+Shift+V opens straight into the history
     }
     window.ummShow = show
     if (pending.show) { show(pending.show, pending.mode); pending.show = undefined }
     else if (!native) api.context().then(show, () => {})
+    api.settings().then(s => send({ type: 'appearance', mode: s.appearance }), () => {})  // this page loads with the app, so it sets the saved appearance
     return () => { window.ummShow = undefined }
   }, [])
   useEffect(() => { (mode === 'note' ? area : input).current?.focus() }, [shown, mode])
@@ -58,7 +60,7 @@ export default function Hotbar() {
   // report height to the native panel
   useEffect(() => {
     const el = root.current!
-    const ro = new ResizeObserver(() => send({ type: 'resize', height: Math.ceil(el.getBoundingClientRect().height) }))
+    const ro = new ResizeObserver(() => send({ type: 'resize', height: el.offsetHeight }))  // layout height, so the open animation's scale does not count
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -208,7 +210,7 @@ export default function Hotbar() {
             {types && <select className="types" value={type} onChange={e => choose(e.target.value)} title="Filter by type, Cmd P">
               <option value="">All</option>{types.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</select>}
           </div>
-          <div className={'body' + (split ? ' split' : '')}>
+          <div key={mode} className={'body' + (split ? ' split' : '')}>
           <div className="lists">
           {mode !== 'search' && <ul className={'rows' + (mode !== 'menu' ? ' capped' : '')} id="hrows" role="listbox">
             {rows.map((r, i) => (
@@ -239,7 +241,7 @@ export default function Hotbar() {
             </ul>
           )}
           </div>
-          {split && <div className={'peekbox ' + (mode === 'clip' ? '' : pm?.kind ?? '')}>{info && <p className="pinfo">{info}</p>}{pv ?? <p className="dim">Nothing to preview</p>}</div>}
+          {split && <div className={'peekbox ' + (mode === 'clip' ? '' : pm?.kind ?? '')}><div key={at} className="pv">{info && <p className="pinfo">{info}</p>}{pv ?? <p className="dim">Nothing to preview</p>}</div></div>}
           </div>
         </>
       )}

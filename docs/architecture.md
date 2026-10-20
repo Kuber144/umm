@@ -197,12 +197,12 @@ The UI talks to the backend with plain `fetch('/api/...')`. In the app, the page
 UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that object is missing (browser dev), the UI falls back as noted.
 
 ```
-{type: "hide"}                     close the hotbar, focus returns to the previous app
+{type: "hide"}                     fade the hotbar out (140ms), focus returns to the previous app. Actions hide it at once instead
 {type: "paste", detail?}           close the hotbar, "saved" sound, card "Pasted" and, with Accessibility, press Cmd+V in the app that
                                    gets focus back (CGEvent). Without it the card says "Copied to clipboard" (the entry is on the clipboard already)
 {type: "saved", label?, detail?, kind?}  close the hotbar, play the "saved" sound, show the card: label (default "Saved"), detail
                                    (default "in <profile>") and an icon for kind note | clip | image | files (UI already did the fetch)
-{type: "error", label?}            play the error sound, show label (default "That did not work") on a blush card
+{type: "error", label?}            play the error sound, show label (default "That did not work") on a red card
 {type: "capture", note?, record?} close the hotbar, wait 120ms, POST /api/capture with the app from context, the
                                    display under the mouse and note when not empty. Plays the shutter sound as the request
                                    is sent, then shows the card "Screenshot saved" with the thumbnail from GET /api/thumb/{file}.
@@ -216,7 +216,9 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "recording", on}            on: "rec-start" sound, a red ring along the screen edge, the card "Recording", red status item
                                    with the elapsed time (m:ss) and a "Stop recording" menu item (POST /api/record/stop).
                                    off: both go away, "rec-stop" sound, card "Recording saved". A repeat of the current state is ignored
-{type: "resize", height}           hotbar panel height in CSS px, width is fixed at 680
+{type: "resize", height}           hotbar panel height in CSS px, width is fixed at 680. The panel animates to it (220ms). The page
+                                   itself is a fixed 760 px tall and pinned to the top, so WebKit never relays out while the panel moves
+{type: "appearance", mode}         system | light | dark, sets NSApp.appearance. The hotbar page sends the saved setting on load
 {type: "openExternal", url}        open in the default browser
 {type: "settings"}                 ask for the login item state, Swift replies with window.ummSettings
 {type: "loginItem", on}            register or unregister umm as a login item (SMAppService.mainApp), then replies like "settings"
@@ -226,7 +228,9 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "quit"}                     kill switch, quits the app and the backend
 ```
 
-The card is a 360 by 64 point panel near the top of the screen under the mouse, drawn with the UI's colours (`ui/src/index.css`, light or dark): a tile on the left with the screenshot thumbnail or an SF Symbol on teal (blush for recording and errors), a title and a detail line. It never takes focus, slides down as it appears and fades after 2.2 seconds. The hotbar fades in and slides up 6 points. Reduce Motion turns the motion off.
+The card is a 360 by 64 point panel near the top of the screen under the mouse, on the same glass as the hotbar, with the UI's colours (`ui/src/index.css`, light or dark): a tile on the left with the screenshot thumbnail or an SF Symbol on the accent blue (red for errors), a title and a detail line. It never takes focus, slides down as it appears and fades after 2.2 seconds. The hotbar fades in and slides up 4 points while the page scales from 98.5%. All native motion uses the UI's ease out curve. Reduce Motion turns the motion off.
+
+Glass: `glass()` puts an `NSVisualEffectView` behind a clear page or view. The hotbar and card use the popover material with a 16 point rounded clip and a hairline edge, the main window the sidebar material. The page marks itself `html.glass` and leaves the sidebar and the hotbar tinted but not solid. The `appearance` setting (System, Light, Dark) picks the windows' appearance and the page follows it.
 
 Sounds are `app/sounds/*.wav` (shutter, saved, rec-start, rec-stop, error). `scripts/make-sounds.py` generates them and `build.sh` copies them into the app. `play(name)` falls back to the system sound of that name when a file is missing. Recording start also draws a red ring along the screen edge that fades over a second, unless Reduce Motion is on.
 

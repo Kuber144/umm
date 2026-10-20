@@ -49,10 +49,10 @@ export const SOURCES: Record<string, [IconName, string]> = {
   hotbar: ['hotbar', 'Hotbar'], app: ['open', 'umm window'], cli: ['term', 'Command line'], mcp: ['spark', 'Agent'],
 }
 
-// Profile identity colours come from the icon: user is teal, agent is blush, the rest rotate through blue, sand and deep teal.
-const swatch = ['#9AD8F0', '#D6BC84', '#3E8F82']
+// Profile identity colours are system colours: user is the accent, agent purple, the rest rotate through green, orange and pink.
+const swatch = ['#34C759', '#FF9F0A', '#FF375F']
 export const profileColor = (n: string) =>
-  n === 'user' ? 'var(--teal)' : n === 'agent' ? 'var(--blush)' : swatch[[...n].reduce((h, c) => h + c.charCodeAt(0), 0) % swatch.length]
+  n === 'user' ? 'var(--accent)' : n === 'agent' ? '#AF52DE' : swatch[[...n].reduce((h, c) => h + c.charCodeAt(0), 0) % swatch.length]
 
 export const Dot = ({ name }: { name: string }) => <i className="dot" style={{ background: profileColor(name) }} />
 
@@ -60,7 +60,7 @@ export const Kbd = ({ children }: { children: ReactNode }) => <kbd>{children}</k
 
 // The installed app's icon, else a monogram in an icon colour. Names without an app are remembered, so each is asked for once.
 const noIcon = new Set<string>()
-const tones = ['#F29A8A', '#9AD8F0', '#D6BC84', '#5FB3A5']
+const tones = ['#FF9F0A', '#34C759', '#5E5CE6', '#FF375F']
 export function AppIcon({ name }: { name: string }) {
   const [bad, setBad] = useState(noIcon.has(name))
   if (!name) return null

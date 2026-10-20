@@ -31,7 +31,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
     var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastURL: String?, lastDisplay: Int?, signals: [DispatchSourceSignal] = [], woken = Set<pid_t>()
-    var stopItem: NSMenuItem!, recTimer: Timer?, cardTick = 0, top: CGFloat = 0, lastProfile = "user"
+    var stopItem: NSMenuItem!, recTimer: Timer?, cardTick = 0, top: CGFloat = 0, lastProfile = "user", shows = 0
+    let ease = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)  // --ease in ui/src/index.css
+    var still: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     var sounds: [String: NSSound] = [:]
     // feedback card, drawn like a hotbar row: the hotbar closes on every action, so this is what says it worked
     let tile = NSView(), face = NSImageView(), title = NSTextField(labelWithString: ""), sub = NSTextField(labelWithString: "")
@@ -40,7 +42,6 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         let v = NSView(frame: p.contentView!.bounds)
         v.wantsLayer = true
         v.layer?.cornerRadius = 16
-        v.layer?.borderWidth = 1
         tile.wantsLayer = true
         tile.layer?.cornerRadius = 10
         tile.layer?.masksToBounds = true
@@ -52,7 +53,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         sub.font = .systemFont(ofSize: 12)
         for (l, y) in [(title, 33), (sub, 14)] { l.frame = NSRect(x: 64, y: CGFloat(y), width: 284, height: 18); l.lineBreakMode = .byTruncatingTail; v.addSubview(l) }
         v.addSubview(tile)
-        p.contentView = v
+        p.contentView = glass(v, .popover, radius: 16)
         p.isOpaque = false
         p.backgroundColor = .clear
         p.level = .statusBar
@@ -88,7 +89,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         status.menu = m
 
         hotbarView = makeView("#hotbar", transparent: true)
-        hotbar.contentView = hotbarView
+        hotbar.contentView = glass(hotbarView, .popover, radius: 16)
+        // the page never resizes: it keeps its top edge and a fixed height, so WebKit lays out once and the panel animates around it
+        hotbarView.frame = NSRect(x: 0, y: hotbar.contentView!.bounds.height - 760, width: 680, height: 760)
+        hotbarView.autoresizingMask = [.width, .minYMargin]
         // nonactivating keeps the panel on screen even when macOS refuses to activate us
         hotbar.isOpaque = false
         hotbar.backgroundColor = .clear
@@ -173,7 +177,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     // MARK: hotbar
 
     func toggle(clip: Bool = false) {
-        if hotbar.isVisible { return hideHotbar() }
+        if hotbar.isVisible { return hideHotbar(fade: true) }
         // fetch before activating so the frontmost app is still the user's
         DispatchQueue.global().async {
             // a data: URL can be megabytes, and over 64 KB the backend refuses the request
@@ -221,23 +225,32 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             .flatMap { ids.prefix(Int(n)).firstIndex(of: $0) }.map { $0 + 1 }
         let f = s.visibleFrame, h = hotbar.frame.height
         top = f.maxY - f.height * 0.2
-        let end = NSRect(x: f.midX - 340, y: top - h, width: 680, height: h), still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        hotbar.setFrame(still ? end : end.offsetBy(dx: 0, dy: -6), display: false)
+        let end = NSRect(x: f.midX - 340, y: top - h, width: 680, height: h)
+        shows += 1
+        hotbar.setFrame(still ? end : end.offsetBy(dx: 0, dy: -4), display: false)
         hotbar.alphaValue = still ? 1 : 0
+        edge(hotbar)
         if main == nil { NSApp.activate(ignoringOtherApps: true) } // activating would raise the main window over the user's app
         hotbar.makeKeyAndOrderFront(nil)
-        if !still { NSAnimationContext.runAnimationGroup { $0.duration = 0.12; hotbar.animator().alphaValue = 1; hotbar.animator().setFrame(end, display: true) } }
+        if !still { NSAnimationContext.runAnimationGroup { $0.duration = 0.2; $0.timingFunction = ease; hotbar.animator().alphaValue = 1; hotbar.animator().setFrame(end, display: true) } }
         hotbar.makeFirstResponder(hotbarView)
         hotbarView.evaluateJavaScript("window.ummShow?.(\(ctx), \(clip ? "\"clip\"" : "undefined"))")
     }
 
-    func hideHotbar(restore: Bool = true) {
+    // fade only when closing to nothing. An action hides at once, so a screenshot never catches the hotbar and a paste reaches the app
+    func hideHotbar(restore: Bool = true, fade: Bool = false) {
         guard hotbar.isVisible else { return }
-        hotbar.orderOut(nil)
-        if restore && main == nil && NSApp.isActive { NSApp.hide(nil) }
+        let n = shows
+        let done = { [self] in
+            guard n == shows else { return }  // reopened while fading
+            hotbar.orderOut(nil); hotbar.alphaValue = 1
+            if restore && main == nil && NSApp.isActive { NSApp.hide(nil) }
+        }
+        if !fade || still { return done() }
+        NSAnimationContext.runAnimationGroup({ $0.duration = 0.14; $0.timingFunction = CAMediaTimingFunction(name: .easeIn); hotbar.animator().alphaValue = 0 }, completionHandler: done)
     }
 
-    func windowDidResignKey(_ n: Notification) { if n.object as? NSWindow === hotbar { hideHotbar() } }
+    func windowDidResignKey(_ n: Notification) { if n.object as? NSWindow === hotbar { hideHotbar(fade: true) } }
 
     // MARK: main window
 
@@ -254,8 +267,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             w.isReleasedWhenClosed = false
             w.delegate = self
             w.center()
-            mainView = makeView("", transparent: false)
-            w.contentView = mainView
+            mainView = makeView("", transparent: true)
+            w.contentView = glass(mainView!, .sidebar)  // the page leaves its sidebar clear
             main = w
             pendingOpen = open
         } else {
@@ -285,7 +298,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     func userContentController(_ u: WKUserContentController, didReceive m: WKScriptMessage) {
         guard let d = m.body as? [String: Any], let t = d["type"] as? String else { return }
         switch t {
-        case "hide": hideHotbar()
+        case "hide": hideHotbar(fade: true)
         case "paste":  // the entry is on the clipboard already. With Accessibility, press Cmd+V in the app that gets focus back
             hideHotbar(); play("saved")
             let ax = AXIsProcessTrusted()
@@ -306,10 +319,11 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         case "recording": recording(d["on"] as? Bool == true)
         case "resize":
             if let h = d["height"] as? Double {
-                // zero duration, so it replaces a show animation still running
-                NSAnimationContext.runAnimationGroup { $0.duration = 0; hotbar.animator().setFrame(NSRect(x: hotbar.frame.minX, y: top - h, width: 680, height: h), display: true) }
-                hotbar.invalidateShadow()
+                // the page pins its footer to the window bottom, so the panel grows and shrinks smoothly around the new content
+                NSAnimationContext.runAnimationGroup({ $0.duration = hotbar.isVisible && !still ? 0.22 : 0; $0.timingFunction = ease
+                    hotbar.animator().setFrame(NSRect(x: hotbar.frame.minX, y: top - h, width: 680, height: h), display: true) }) { self.hotbar.invalidateShadow() }
             }
+        case "appearance": NSApp.appearance = ["light": NSAppearance(named: .aqua), "dark": NSAppearance(named: .darkAqua)][d["mode"] as? String ?? ""] ?? nil
         case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
         case "loginItem": loginItem(d["on"] as? Bool)
         case "settings": loginItem(nil)
@@ -334,6 +348,29 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         if sounds[name] == nil { sounds[name] = Bundle.main.url(forResource: name, withExtension: "wav").flatMap { NSSound(contentsOf: $0, byReference: true) } ?? NSSound(named: name) }
         sounds[name]?.stop()
         sounds[name]?.play()
+    }
+
+    // a macOS material behind a clear page or view. The mask stretches, so the panel can resize and keep its rounded corners
+    func glass(_ v: NSView, _ m: NSVisualEffectView.Material, radius: CGFloat = 0) -> NSVisualEffectView {
+        let fx = NSVisualEffectView(frame: v.frame)
+        fx.material = m; fx.blendingMode = .behindWindow; fx.state = .active
+        if radius > 0 {
+            let mask = NSImage(size: NSSize(width: radius * 2 + 1, height: radius * 2 + 1), flipped: false) { NSBezierPath(roundedRect: $0, xRadius: radius, yRadius: radius).fill(); return true }
+            mask.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+            mask.resizingMode = .stretch
+            fx.maskImage = mask
+            fx.wantsLayer = true; fx.layer?.cornerRadius = radius; fx.layer?.masksToBounds = true  // clips the page too
+            fx.layer?.borderWidth = 1
+        }
+        v.frame = fx.bounds; v.autoresizingMask = [.width, .height]
+        fx.addSubview(v)
+        return fx
+    }
+
+    // the hairline edge of a glass panel, in the current light or dark appearance
+    func edge(_ w: NSWindow) {
+        let dark = w.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        w.contentView?.layer?.borderColor = (dark ? NSColor.white.withAlphaComponent(0.13) : NSColor.black.withAlphaComponent(0.1)).cgColor
     }
 
     func hex(_ h: String, _ a: CGFloat = 1) -> NSColor {
@@ -367,28 +404,27 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     // colours are the UI's tokens (ui/src/index.css). An image fills the tile, else an SF Symbol on teal, or blush when warn
     func card(_ t: String, _ s: String? = nil, icon: String = "checkmark", image: NSImage? = nil, warn: Bool = false) {
         cardTick += 1
-        let tick = cardTick, dark = card.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua, ink = hex(dark ? "eee7d4" : "1f2a2e")
-        let v = card.contentView!
-        v.layer?.backgroundColor = hex(dark ? "1c282c" : "fffdf7").cgColor
-        v.layer?.borderColor = ink.withAlphaComponent(0.16).cgColor
+        let tick = cardTick, dark = card.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua, ink = hex(dark ? "f5f5f7" : "1d1d1f")
+        let v = card.contentView!.subviews[0]
+        edge(card)
+        v.layer?.backgroundColor = hex(dark ? "232325" : "ffffff", 0.5).cgColor
         title.stringValue = t
         title.textColor = ink
         title.frame.origin.y = s == nil ? 23 : 33
         sub.stringValue = s ?? ""
-        sub.textColor = hex(dark ? "98a19b" : "535d59")
+        sub.textColor = hex(dark ? "98989d" : "6e6e73")
         tile.layer?.contents = image
-        tile.layer?.backgroundColor = (image != nil ? .clear : warn ? hex("f29a8a") : hex(dark ? "6cc0b1" : "5fb3a5")).cgColor
+        tile.layer?.backgroundColor = (image != nil ? .clear : warn ? hex(dark ? "ff453a" : "ff3b30") : hex(dark ? "0a84ff" : "007aff")).cgColor
         face.isHidden = image != nil
         face.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 17, weight: .medium))
-        face.contentTintColor = hex(dark && !warn ? "142024" : "1f2a2e")
+        face.contentTintColor = .white
         let f = mouseScreen.visibleFrame, end = NSRect(x: f.midX - 180, y: f.maxY - f.height * 0.12 - 64, width: 360, height: 64)
-        let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if !card.isVisible { card.setFrame(still ? end : end.offsetBy(dx: 0, dy: 10), display: false); card.alphaValue = still ? 1 : 0 }
         card.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { $0.duration = still ? 0 : 0.18; card.animator().alphaValue = 1; card.animator().setFrame(end, display: true) }
+        NSAnimationContext.runAnimationGroup { $0.duration = still ? 0 : 0.28; $0.timingFunction = ease; card.animator().alphaValue = 1; card.animator().setFrame(end, display: true) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
             guard tick == self.cardTick else { return }
-            NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; self.card.animator().alphaValue = 0; self.card.animator().setFrame(end.offsetBy(dx: 0, dy: 6), display: true) }) {
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.24; $0.timingFunction = CAMediaTimingFunction(name: .easeIn); self.card.animator().alphaValue = 0; self.card.animator().setFrame(end.offsetBy(dx: 0, dy: 6), display: true) }) {
                 if tick == self.cardTick { self.card.orderOut(nil) }
             }
         }

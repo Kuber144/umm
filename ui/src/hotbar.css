@@ -1,6 +1,14 @@
-.bar > .in { animation: show .12s ease-out; }
-@keyframes show { from { opacity: 0; transform: translateY(-4px); } }
-.bar { overflow: hidden; border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); }
+/* In the app the page is taller than the panel and never resizes. The panel clips it, draws the rounded edge, and animates its
+   height to .bar, which is what it measures. The tint covers the whole page, so it stays even while the panel moves. */
+html[data-view=hotbar], html[data-view=hotbar] body { height: 100%; }
+html[data-view=hotbar] body { background: var(--card); }
+html.glass[data-view=hotbar] body { background: color-mix(in srgb, var(--card) 72%, transparent); }
+html:not(.glass) .bar { overflow: hidden; border-radius: 16px; box-shadow: inset 0 0 0 1px var(--line-2); }
+.bar { transform-origin: 50% 0; }
+.glass .bar footer { background: color-mix(in srgb, var(--sunk) 55%, transparent); }
+.body, .note { animation: enter .22s var(--ease); }
+.pv { animation: soften .16s var(--ease); }
+@keyframes pane { from { opacity: 0; transform: translateX(12px); } }
 .ask { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px; color: var(--ink-3); border-bottom: 1px solid var(--line); }
 .ask .logo { width: 30px; height: 30px; margin: -3px -2px -3px -3px; flex: none; }
 .ask input { flex: 1; min-width: 0; border: 0; background: none; font-size: 17px; color: var(--ink); }
@@ -13,14 +21,14 @@
 .tile { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 7px; background: var(--sunk); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
 .tile .ic { width: 15px; height: 15px; }
 .tile .dot { margin: 0; }
-li.on { background: var(--teal-tint); }
+li.on { background: var(--accent-tint); }
 .rows li:active, .mems li:active { transform: scale(.99); }
 .secret { transition: filter var(--quick); }
 .rows li:not(.on) .secret, .mems li:not(.on) .secret { filter: blur(5px); }
-li.on .tile { background: var(--teal); color: var(--on-teal); box-shadow: inset 0 0 0 1.5px var(--edge); }
+li.on .tile { background: var(--accent); color: var(--on-accent); box-shadow: none; }
 .label { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .peek { font-size: 12.5px; color: var(--ink-3); display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
-.live { display: inline-flex; align-items: center; gap: 8px; color: var(--blush-ink); font: 600 13px var(--font); font-variant-numeric: tabular-nums; }
+.live { display: inline-flex; align-items: center; gap: 8px; color: var(--red-ink); font: 600 13px var(--font); font-variant-numeric: tabular-nums; }
 .none { color: var(--ink-3); font-size: 13px; padding-left: 8px; }
 .note textarea { display: block; width: 100%; border: 0; background: none; resize: none; padding: 18px 20px 4px; font-size: 15px; line-height: 1.55; min-height: 140px; max-height: 340px; }
 .note .nhead { margin: 0; padding: 14px 20px 0; font-size: 12px; color: var(--ink-3); }
@@ -37,8 +45,8 @@ footer kbd { margin: 0 4px 0 10px; }
 .split .lists { flex: 1; min-width: 0; overflow: auto; }
 .split .mems, .split .rows.capped { max-height: none; overflow: visible; }
 .split .lists .peek { display: none; }
-.peekbox { flex: none; width: 55%; padding: 12px 16px 20px; border-left: 1px solid var(--line); overflow: auto; overflow-wrap: anywhere; user-select: text; }
-.peekbox > img { display: block; max-width: 100%; border-radius: 8px; }
+.peekbox { animation: pane .26s var(--ease); flex: none; width: 55%; padding: 12px 16px 20px; border-left: 1px solid var(--line); overflow: auto; overflow-wrap: anywhere; user-select: text; }
+.pv > img { display: block; max-width: 100%; max-height: 300px; margin: 0 auto; border-radius: 8px; object-fit: contain; }
 .peekbox .prose { font-size: 13.5px; line-height: 20px; margin-bottom: 12px; }
 .peekbox h2 { font-size: 14px; line-height: 19px; font-weight: 600; overflow-wrap: anywhere; }
 .peekbox .hero img { max-height: 220px; }
@@ -49,4 +57,4 @@ footer kbd { margin: 0 4px 0 10px; }
 li.on .tile:has(img) { background: var(--card); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2); }
 .peekbox .hero { cursor: default; }
 .lists > .mems:first-child { border-top: 0; }
-.peekbox > img + .prose { margin-top: 10px; }
+.pv > img + .prose { margin-top: 10px; font-size: 12px; line-height: 17px; color: var(--ink-3); }
