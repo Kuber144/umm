@@ -6,7 +6,7 @@
 .ask input { flex: 1; min-width: 0; border: 0; background: none; font-size: 17px; color: var(--ink); }
 .ask input::placeholder { color: var(--ink-3); }
 .rows, .mems { list-style: none; margin: 0; padding: 8px; }
-.mems { border-top: 1px solid var(--line); max-height: 264px; overflow: auto; }
+.mems { border-top: 1px solid var(--line); max-height: 336px; overflow: auto; }
 .rows li, .mems li { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 8px; border-radius: 10px; }
 .rows li.split { margin-bottom: 9px; position: relative; }
 .rows li.split::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -5px; height: 1px; background: var(--line); }
@@ -49,3 +49,4 @@ footer kbd { margin: 0 4px 0 10px; }
 li.on .tile:has(img) { background: var(--card); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2); }
 .peekbox .hero { cursor: default; }
 .lists > .mems:first-child { border-top: 0; }
+.peekbox > img + .prose { margin-top: 10px; }

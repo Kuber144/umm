@@ -113,7 +113,7 @@ POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an i
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
                                                                     clipboard is marked secret (see /api/context)
-GET    /api/clipboard/history                            -> [{text or image, at, app}]    copies, newest first, at is local ISO time, app is the front app at copy time.
+GET    /api/clipboard/history                            -> [{text, image or files, at, app}] copies, newest first, at is local ISO time, app is the front app at copy time. A copied image file also has image, a preview up to 1600 px.
                                                                     image is "clipboard/<name>.jpg" (quality 0.8), shown at /api/files/clipboard/<name>.jpg.
                                                                     Kept in clipboard.json in the data folder, so it survives a restart. Up to clipboard_history entries.
                                                                     An older copy of the same text is dropped, images are never compared. An entry that falls off
@@ -169,7 +169,7 @@ model:          "small" | "medium", default "medium"
 enrich_links:   default true, fetch title and description of saved links (not links with a secret looking query parameter)
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
-clipboard_history: default 50, 0 to 500. How many copies, text or image, the backend keeps for GET /api/clipboard/history. 0 turns it off
+clipboard_history: default 50, 0 to 500. How many copies, text, image or files, the backend keeps for GET /api/clipboard/history. 0 turns it off
                 and clears the list and the image files. A thread checks the pasteboard four times a second. Saved to clipboard.json after each change, written through a .tmp file
 screenshot_days: default 0 (keep forever). A background thread runs at backend start and every 24 hours. It deletes the image
                 and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay.
@@ -263,14 +263,14 @@ Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot 
 2. Screenshot an area
 3. Screenshot with a note: opens the note editor, then `Cmd+Enter` takes the screenshot with the note
    Screenshot and record (hidden while recording): takes a screenshot and starts a recording tied to it (`{type:'capture', record:true}`, Swift does both). The recording item gets `meta.shot`, the screenshot's id
-4. Save clipboard (text preview, "Save clipboard image" or "Save N copied files", hidden when the clipboard is empty). The text preview is blurred until the row is selected. `Tab` on a text clipboard opens it in the editor, `Cmd+Enter` saves the edited text
+4. Save clipboard (text preview, "Save clipboard image", or "Save copied file" with the file names, hidden when the clipboard is empty). Copied files save like a drop on the main window: an image file becomes a screenshot item with OCR, anything else a path. The text preview is blurred until the row is selected. `Tab` on a text clipboard opens it in the editor, `Cmd+Enter` saves the edited text
 5. Pick from clipboard history (only when the clipboard history setting has more than one entry): lists recent copies (text, or a 28 px thumbnail for images) with the app each came from, typing filters them. `Enter` puts one back on the clipboard (`POST /api/clipboard/restore`), `Cmd+Enter` saves it as a memory (`/api/clipboard/save`), `Tab` edits a text entry first, `Esc` goes back. The text is blurred until the row is selected
 6. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
 7. Start recording / Stop recording (shows elapsed time while on)
 8. Record with a note: opens the note editor, then `Cmd+Enter` starts the recording with the note. Hidden while recording
-9. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes. Pinned memories show a small pin
+9. Search memories: opens a search mode. Typing in the menu only filters these rows, so the last row becomes `Search memories for "..."` and `Enter` carries the text over. The search mode lists recent memories while the box is empty. Links show their title and site icon. `Cmd+Enter` opens the search in the main window, `Esc` goes back. `Enter` on a memory copies it (path, link or text) and closes. Pinned memories show a small pin
 
-In clipboard history and memory search, a type picker sits right of the search box (All, then Text, Images, Links for copies, or the memory kinds). `Cmd+P` steps through it. With a type picked and no query, the hotbar lists recent memories of that type. `Space` toggles a preview pane on the right, the same view the main window shows (note, image, text in image, audio player, link card, path). It stays open while the highlight moves and across opens, and works before any arrow key when the search box is empty. A move event with the pointer still in place, such as after a scroll, does not move the highlight
+In clipboard history and memory search, a type picker sits right of the search box (All, then Text, Images, Links, Files for copies, or the memory kinds). `Cmd+P` steps through it. A copied image file counts as an image. `Enter` on a copied file puts the file back, as if copied in Finder. `Space` toggles a preview pane on the right, the same view the main window shows (note, image, text in image, audio player, link card, path). It stays open while the highlight moves and across opens, and works before any arrow key when the search box is empty. A move event with the pointer still in place, such as after a scroll, does not move the highlight
 10. Switch profile
 11. Open umm (main window)
 12. Quit umm. While recording, the first `Enter` asks again

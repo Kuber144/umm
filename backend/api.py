@@ -119,6 +119,7 @@ class Shot(App):
 class Import(App):
     path: Nonempty
     profile: ProfileName | None = None
+    note: Content | None = None
 
 
 class Id(BaseModel):
@@ -268,7 +269,7 @@ def context(url: str | None = None):  # url is the page or document Swift read o
 
 
 try:
-    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text or image, at, app}] newest first. What the backend saw, for the hotbar picker
+    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text, image or files (image is then a preview), at, app}] newest first. What the backend saw, for the hotbar picker
 except (OSError, ValueError):
     history = []
 (db.FILES / "clipboard").mkdir(exist_ok=True)  # the images of history, served by /api/files
@@ -285,15 +286,32 @@ def keep(new):
 
 
 def remember(entry, n):
-    """Newest first, up to n. An older copy of the same text is dropped, images are not compared."""
-    text = entry.get("text")
-    keep([entry, *(h for h in history if text is None or h.get("text") != text)][:n])
+    """Newest first, up to n. An older copy of the same text or files is dropped, images are not compared."""
+    same = lambda h: h.get("text") or h.get("files")  # noqa: E731
+    keep([entry, *(h for h in history if same(entry) is None or same(h) != same(entry))][:n])
 
 
 def remember_image(data, n, app):
     name = f"clipboard/{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.jpg"
     jpg(data, db.FILES / name)
     remember({"image": name, "at": datetime.now().isoformat(timespec="seconds"), "app": app}, n)
+
+
+def remember_files(paths, n, app):
+    """Copied files, with a preview when the first is an image. The preview is capped at 1600 px."""
+    e = {"files": paths, "at": datetime.now().isoformat(timespec="seconds"), "app": app}
+    if Path(paths[0]).suffix.lower().lstrip(".") in IMAGES | {"jpg", "tif"}:
+        name = f"clipboard/{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.jpg"
+        if subprocess.run(["sips", "-s", "format", "jpeg", "-Z", "1600", paths[0], "--out", str(db.FILES / name)], capture_output=True).returncode == 0:
+            e["image"] = name
+    remember(e, n)
+
+
+def put_files(paths):
+    with objc.autorelease_pool():
+        pb = NSPasteboard.generalPasteboard()
+        pb.clearContents()
+        pb.writeObjects_([NSURL.fileURLWithPath_(p) for p in paths])
 
 
 seen = [None]  # the pasteboard changeCount the watcher saw last. A restore sets it, so its own copy is not a new entry
@@ -308,8 +326,10 @@ def watch_clipboard():
             if not n:
                 if history:
                     keep([])
-            elif changed and (r := clipboard())[0] in ("image", "text"):
-                if r[0] == "image":
+            elif changed and (r := clipboard())[0]:
+                if r[0] == "files":
+                    remember_files(r[1], n, front_app())
+                elif r[0] == "image":
                     remember_image(pasteboard_image(), n, front_app())  # the front app made the copy
                 else:
                     remember({"text": r[1][:db.MAX_CONTENT], "at": datetime.now().isoformat(timespec="seconds"), "app": front_app()}, n)
@@ -330,7 +350,7 @@ def clear_history():
 
 
 def entry(at):
-    if not (e := next((h for h in history if h["at"] == at), None)) or "image" in e and not (db.FILES / e["image"]).is_file():
+    if not (e := next((h for h in history if h["at"] == at), None)) or "image" in e and "files" not in e and not (db.FILES / e["image"]).is_file():
         raise HTTPException(404, "no clipboard entry with that time")
     return e
 
@@ -338,7 +358,7 @@ def entry(at):
 @app.post("/api/clipboard/restore")
 def restore_clipboard(a: At):
     e = entry(a.at)
-    run("pbcopy", input=e["text"]) if "text" in e else put_image(db.FILES / e["image"])
+    run("pbcopy", input=e["text"]) if "text" in e else put_files(e["files"]) if "files" in e else put_image(db.FILES / e["image"])
     with objc.autorelease_pool():
         seen[0] = NSPasteboard.generalPasteboard().changeCount()
     keep([e, *(h for h in history if h is not e)])  # newest first, like a fresh copy
@@ -351,6 +371,8 @@ def save_history_entry(c: Clip):
     app_name = e.get("app") or front_window()
     if "text" in e:
         return {"id": db.add(e["text"], app=app_name, profile=c.profile, meta=meta, note=c.note)}
+    if "files" in e:
+        return {"ids": [import_file(Import(path=p, app=app_name, meta=meta, profile=c.profile, note=c.note))["id"] for p in e["files"]]}
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
     shutil.copy(db.FILES / e["image"], db.FILES / name)
     return {"id": save_shot(name, app_name, meta, c.profile, c.note)}
@@ -421,7 +443,7 @@ def save_clipboard(a: App | None = None):
     app_name = (a and a.app) or front_window()
     kind, value = clipboard()
     if kind == "files":
-        return {"ids": [db.add(p, "path", app=app_name, meta=a and a.meta) for p in value]}
+        return {"ids": [import_file(Import(path=p, app=app_name, meta=a and a.meta))["id"] for p in value]}  # an image file saves as an image
     if kind == "image":
         name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
         with objc.autorelease_pool():
@@ -446,8 +468,8 @@ def import_file(i: Import):
     # sips prints only the path for a non-image, so "a png" must not count. An unreadable or broken image is saved as a path
     if (p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition("format: ")[2] in IMAGES
             and subprocess.run(["sips", "-s", "format", "jpeg", str(p), "--out", str(db.FILES / name)], capture_output=True).returncode == 0):
-        return {"id": save_shot(name, i.app, meta, i.profile)}
-    return {"id": db.add(str(p), "path", app=i.app, profile=i.profile, meta=meta)}
+        return {"id": save_shot(name, i.app, meta, i.profile, i.note)}
+    return {"id": db.add(str(p), "path", app=i.app, profile=i.profile, meta=meta, note=i.note)}
 
 
 @app.get("/api/settings")
