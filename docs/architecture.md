@@ -206,7 +206,7 @@ window.ummFolder?.(path)    reply to "chooseFolder", the absolute path of the pi
 
 ## Page URL
 
-When umm has the Accessibility permission, Swift reads the front app over the generic AX API as the hotbar opens, before it fetches the context. It takes the focused window's `AXDocument` (a file URL in editors, the page URL in Chrome). If that is empty, it walks up from the focused element to an `AXWebArea` and takes its `AXURL`. No per-app code. It sends the result as `GET /api/context?url=`, so `context.url` holds it. Swift adds it to the hotbar screenshot as `meta = {source: "hotbar", url}`, and the UI adds `meta.url` to notes and clipboard saves from the hotbar. Each AX call waits at most 0.5 seconds. Firefox shows no web area unless an assistive app is running, so it gets no URL. Without the permission, `url` is null and nothing else changes.
+When umm has the Accessibility permission, Swift reads the front app over the generic AX API as the hotbar opens, before it fetches the context. It takes the focused window's `AXDocument` (a file URL in editors, the page URL in Chrome). If that is empty, it walks up from the focused element to an `AXWebArea` and takes its `AXURL`. No per-app code. It sends the result as `GET /api/context?url=`, so `context.url` holds it. Swift adds it to the hotbar screenshot as `meta = {source: "hotbar", url}`, and the UI adds `meta.url` to notes and clipboard saves from the hotbar. Each AX call waits at most 0.5 seconds. A URL of 4000 characters or more, such as a `data:` URL, is left out, since the backend refuses a request line over 64 KB. Firefox shows no web area unless an assistive app is running, so it gets no URL. Without the permission, `url` is null and nothing else changes.
 
 ## OCR languages
 
