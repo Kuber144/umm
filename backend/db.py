@@ -109,12 +109,14 @@ def detect(content):
 
 @locked
 def add(content, kind=None, file=None, app=None, profile=None, meta=None):
+    profile, kind = profile or active_profile(), kind or detect(content)
+    if not file and (same := [id for id, c, _ in recent(profile, kind, 10) if c == content]):  # a double Enter saves once
+        return same[0]
     cur = db.execute("INSERT INTO items(profile, kind, content, file, app, meta, created_at) "
                      "VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
-                     (profile or active_profile(), kind or detect(content), content, file, app,
-                      json.dumps(meta) if meta else None))
+                     (profile, kind, content, file, app, json.dumps(meta) if meta else None))
     db.commit()
-    if cur.lastrowid and (kind or detect(content)) == "link":
+    if cur.lastrowid and kind == "link":
         enrich_later(cur.lastrowid, content)
     embed_later()
     return cur.lastrowid
@@ -289,6 +291,25 @@ def kinds():
 
 def thumb(name):
     return FILES / (Path(name).stem + ".thumb.jpg")
+
+
+@locked
+def recent(profile, kind, seconds):
+    """(id, content, file) of items of one kind saved in the last seconds, newest first."""
+    return db.execute("SELECT rowid, content, file FROM items WHERE profile = ? AND kind = ? AND created_at >= datetime('now', 'localtime', ?) "
+                      "ORDER BY rowid DESC", (profile, kind, f"-{seconds} seconds")).fetchall()
+
+
+@locked
+def expire(days):
+    """Delete image and thumbnail of screenshots older than days. The item, its OCR text and meta stay, file becomes null."""
+    old = db.execute("SELECT rowid, file FROM items WHERE kind = 'screenshot' AND file IS NOT NULL "
+                     "AND created_at < datetime('now', 'localtime', ?)", (f"-{days} days",)).fetchall()
+    for id, f in old:
+        (FILES / f).unlink(missing_ok=True)
+        thumb(f).unlink(missing_ok=True)
+        db.execute("UPDATE items SET file = NULL WHERE rowid = ?", (id,))
+    db.commit()
 
 
 @locked

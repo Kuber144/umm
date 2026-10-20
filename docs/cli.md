@@ -30,7 +30,7 @@ fpath=(~/.zfunc $fpath)
 
 Ids are the numbers shown in the first column. `#42` works wherever `42` does. Commands that read items use the active profile unless you pass `-p NAME` or `-A` for every profile. Colors only show in a terminal and turn off when `NO_COLOR` is set. Errors are one line on stderr. Exit codes are 0 for success, 1 for a failure or a search with no hits, 2 for bad arguments.
 
-Everything the CLI saves carries `meta = {source: "cli", cwd}`, so you can tell later where it came from.
+Everything the CLI saves carries `meta = {source: "cli", cwd}`, so you can tell later where it came from. The same text saved twice within 10 seconds, or the same image within 10 minutes, returns the first id.
 
 ## Saving
 
@@ -41,9 +41,10 @@ Everything the CLI saves carries `meta = {source: "cli", cwd}`, so you can tell 
 | `umm add` | In a terminal, opens `$VISUAL` or `$EDITOR` for a multi-line note. |
 | `umm add -c`, `umm clip` | Save the clipboard. |
 | `umm shot` | Screenshot with OCR. `-d 3` waits 3 seconds first. |
+| `umm import file...` | Save files. An image (png, jpeg, heic, gif, tiff, webp) becomes a screenshot with OCR, anything else a path. |
 | `umm rec start`, `stop`, `status` | Voice recording. `umm rec` shows the status. The voice item appears once transcription finishes. |
 
-Pass `-p NAME` to `add` or `clip` to save into a specific profile. The profile has to exist.
+Pass `-p NAME` to `add`, `clip` or `import` to save into a specific profile. The profile has to exist.
 
 `umm shot --area` is reserved for area select. The backend does not support it yet, so the flag exits with an error.
 
@@ -80,7 +81,7 @@ Each hit shows the id, kind, age, the profile with `-A`, the app and a one line 
 | --- | --- |
 | `umm show 42` | Print the item in full with its app, file path and meta. `--json` adds `path`. |
 | `umm copy 42` | Copy the text, path or link to the clipboard. Alias `cp`. |
-| `umm open 42` | Open the screenshot or recording, open the link in the browser, or reveal the path in Finder. Alias `o`. |
+| `umm open 42` | Open the screenshot or recording, open the link in the browser, or reveal the path in Finder. Alias `o`. A screenshot past `screenshot_days` has no image left to open. |
 | `umm open` | With no id, open the main window. |
 | `umm edit 42` | Edit the text in `$VISUAL` or `$EDITOR`. Alias `e`. |
 | `umm mv 42 work` | Move to another profile. Takes several ids. |

@@ -6,11 +6,27 @@ final class Panel: NSPanel { override var canBecomeKey: Bool { true } }
 
 var onHotKey: (() -> Void)?
 
+// main window: dropped files go to the page as paths instead of WebKit opening them. Text drops stay with WebKit
+final class DropView: WKWebView {
+    func paths(_ d: NSDraggingInfo) -> [String] {
+        (d.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []).map(\.path)
+    }
+    override func draggingEntered(_ d: NSDraggingInfo) -> NSDragOperation { let o = super.draggingEntered(d); return paths(d).isEmpty ? o : .copy }
+    override func draggingUpdated(_ d: NSDraggingInfo) -> NSDragOperation { let o = super.draggingUpdated(d); return paths(d).isEmpty ? o : .copy }
+    override func performDragOperation(_ d: NSDraggingInfo) -> Bool {
+        let p = paths(d)
+        if p.isEmpty { return super.performDragOperation(d) }
+        super.draggingExited(d) // the page ends its drag state, WebKit never sees the drop
+        evaluateJavaScript("window.ummDrop?.(" + String(decoding: (try? JSONSerialization.data(withJSONObject: ["paths": p])) ?? Data("{}".utf8), as: UTF8.self) + ")")
+        return true
+    }
+}
+
 final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     let scheme = Scheme()
     let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
-    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastDisplay: Int?, signals: [DispatchSourceSignal] = []
+    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastURL: String?, lastDisplay: Int?, signals: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ n: Notification) {
         backend.start()
@@ -101,7 +117,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         let c = WKWebViewConfiguration()
         c.setURLSchemeHandler(scheme, forURLScheme: "umm")
         c.userContentController.add(self, name: "umm")
-        let v = WKWebView(frame: .zero, configuration: c)
+        let v: WKWebView = hash.isEmpty ? DropView(frame: .zero, configuration: c) : WKWebView(frame: .zero, configuration: c)
         v.navigationDelegate = self
         v.uiDelegate = self
         if transparent { v.setValue(false, forKey: "drawsBackground") }
@@ -115,14 +131,33 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         if hotbar.isVisible { return hideHotbar() }
         // fetch before activating so the frontmost app is still the user's
         DispatchQueue.global().async {
-            let first = backend.request("GET", "/api/context", wait: 2)
-            let r = first?.0 == 200 ? first : backend.request("GET", "/api/context", wait: 2) // the page breaks on "{}", so try twice
+            let path = "/api/context" + (self.pageURL()?.addingPercentEncoding(withAllowedCharacters: .alphanumerics).map { "?url=" + $0 } ?? "")
+            let first = backend.request("GET", path, wait: 2)
+            let r = first?.0 == 200 ? first : backend.request("GET", path, wait: 2) // the page breaks on "{}", so try twice
             DispatchQueue.main.async { self.showHotbar(r?.0 == 200 ? String(decoding: r!.2, as: UTF8.self) : "{}") }
         }
     }
 
+    // the front window's document or web page, read over Accessibility. nil without the permission
+    func pageURL() -> String? {
+        guard AXIsProcessTrusted(), let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        func get(_ e: CFTypeRef, _ k: String) -> CFTypeRef? { var v: CFTypeRef?; return AXUIElementCopyAttributeValue(e as! AXUIElement, k as CFString, &v) == .success ? v : nil }
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.5) // a hung app must not hold up the hotbar
+        let app = AXUIElementCreateApplication(pid)
+        if let w = get(app, kAXFocusedWindowAttribute), let d = get(w, kAXDocumentAttribute) as? String, !d.isEmpty { return d }
+        var e = get(app, kAXFocusedUIElementAttribute), n = 0 // browsers: walk up from the focus to its web area
+        while let x = e, n < 50 {
+            if get(x, kAXRoleAttribute) as? String == "AXWebArea" { return (get(x, "AXURL") as? URL)?.absoluteString }
+            e = get(x, kAXParentAttribute)
+            n += 1
+        }
+        return nil
+    }
+
     func showHotbar(_ ctx: String) {
-        lastApp = ((try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any])?["app"] as? String ?? ""
+        let c = (try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any]
+        lastApp = c?["app"] as? String ?? ""
+        lastURL = c?["url"] as? String
         let s = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main!
         // screencapture -D takes the 1-based position in the active display list
         var ids = [CGDirectDisplayID](repeating: 0, count: 16), n: UInt32 = 0
@@ -208,6 +243,10 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
         case "loginItem": loginItem(d["on"] as? Bool)
         case "settings": loginItem(nil)
+        case "accessibility":
+            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            loginItem(nil)
         case "quit": NSApp.terminate(nil)
         default: break
         }
@@ -218,6 +257,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     func capture(area: Bool) {
         var b: [String: Any] = ["app": lastApp, "area": area]
         if let d = lastDisplay { b["display"] = d }
+        if let u = lastURL { b["meta"] = ["source": "hotbar", "url": u] }
         let body = (try? JSONSerialization.data(withJSONObject: b)) ?? Data()
         DispatchQueue.global().async {
             let r = backend.request("POST", "/api/capture", headers: ["Content-Type": "application/json"], body: body)

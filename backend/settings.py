@@ -1,7 +1,7 @@
 import json
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from db import DATA
 
@@ -17,6 +17,7 @@ class Settings(BaseModel):
     model: Literal["small", "medium"] = "medium"
     enrich_links: bool = True  # fetch title and description of saved links
     excluded_apps: list[str] = []  # app names the hotbar screenshot refuses to capture
+    screenshot_days: int = Field(0, ge=0)  # delete screenshot images older than this, keep their text. 0 keeps them forever
 
 
 def get():
