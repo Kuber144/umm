@@ -232,49 +232,50 @@ SEM_TOP, SEM_MIN, SEM_GAP = 20, 0.8, 0.06
 APP = "substr(app, 1, instr(app || ':', ':') - 1)"  # app name is the part before ':'
 
 
-@locked
 def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=None, until=None, sort=None,
            agent=None, project=None, source=None, session=None, mode="hybrid"):
     """profile None or '*' searches every profile. kind is comma separated. since/until are YYYY-MM-DD or YYYY-MM-DD HH:MM, inclusive.
     agent, source and session match those meta keys. project matches meta.cwd, that folder or any folder under it.
     With q, mode "hybrid" fuses keyword and cosine ranks. "keyword", or a missing model, is keywords only."""
-    where, args = [], []
-    match = fts(q)
-    if match:
-        where.append("items MATCH ?")
-        args.append(match)
-    # created_at is "YYYY-MM-DD HH:MM:SS", so until + "z" sorts after every time within the given day or minute
-    for cond, val in [("profile = ?", profile if profile != "*" else None), (f"{APP} = ?", app),
-                      ("created_at >= ?", since), ("created_at <= ? || 'z'", until)]:
-        if val:
-            where.append(cond)
-            args.append(val)
-    for key, val in [("agent", agent), ("source", source), ("session", session)]:
-        if val:
-            where.append(f"json_extract(meta, '$.{key}') = ?")
-            args.append(val)
-    if project:
-        project = project.rstrip("/") or "/"
-        where.append("(json_extract(meta, '$.cwd') = ? OR substr(json_extract(meta, '$.cwd'), 1, length(?) + 1) = ? || '/')")
-        args += [project] * 3
-    if kind:
-        where.append(f"kind IN ({','.join('?' * len(kind.split(',')))})")
-        args += kind.split(",")
-    clause = lambda w: f"WHERE {' AND '.join(w)}" if w else ""
-    if match and mode != "keyword" and (qv := embed.embed([q], query=True)):
-        # hybrid: reciprocal rank fusion of keyword order and cosine order, same filters on both
-        score = {id: 1 / (RRF + n) for n, (id,) in enumerate(db.execute(f"SELECT rowid FROM items {clause(where)} ORDER BY rank", args))}
-        vecs = db.execute(f"SELECT rowid, vec FROM items {clause(where[1:] + ['vec IS NOT NULL'])}", args[1:]).fetchall()
-        qv = np.frombuffer(qv[0], np.float16).astype(np.float32)
-        sims = np.frombuffer(b"".join(v for _, v in vecs), np.float16).reshape(len(vecs), qv.size).astype(np.float32) @ qv
-        for n, i in enumerate(i for i in np.argsort(-sims)[:SEM_TOP] if sims[i] >= max(SEM_MIN, sims.max() - SEM_GAP)):
-            score[vecs[i][0]] = score.get(vecs[i][0], 0) + 1 / (RRF + n)
-        ids = sorted(score, key={"old": lambda i: i, "new": lambda i: -i}.get(sort, lambda i: (-score[i], -i)))[offset:offset + limit]
-        found = {r["id"]: row(r) for r in db.execute(f"SELECT {COLS} FROM items WHERE rowid IN ({','.join('?' * len(ids))})", ids)}
-        return [found[i] for i in ids]
-    order = {"old": "rowid", "new": "rowid DESC"}.get(sort) or ("rank, rowid DESC" if match else "rowid DESC")
-    sql = f"SELECT {COLS} FROM items {clause(where)} ORDER BY {order} LIMIT ? OFFSET ?"
-    return [row(r) for r in db.execute(sql, (*args, limit, offset))]
+    qv = fts(q) and mode != "keyword" and embed.embed([q], query=True)  # before the lock, a cold model takes ~0.5 s and saves would wait
+    with lock:
+        where, args = [], []
+        match = fts(q)
+        if match:
+            where.append("items MATCH ?")
+            args.append(match)
+        # created_at is "YYYY-MM-DD HH:MM:SS", so until + "z" sorts after every time within the given day or minute
+        for cond, val in [("profile = ?", profile if profile != "*" else None), (f"{APP} = ?", app),
+                          ("created_at >= ?", since), ("created_at <= ? || 'z'", until)]:
+            if val:
+                where.append(cond)
+                args.append(val)
+        for key, val in [("agent", agent), ("source", source), ("session", session)]:
+            if val:
+                where.append(f"json_extract(meta, '$.{key}') = ?")
+                args.append(val)
+        if project:
+            project = project.rstrip("/") or "/"
+            where.append("(json_extract(meta, '$.cwd') = ? OR substr(json_extract(meta, '$.cwd'), 1, length(?) + 1) = ? || '/')")
+            args += [project] * 3
+        if kind:
+            where.append(f"kind IN ({','.join('?' * len(kind.split(',')))})")
+            args += kind.split(",")
+        clause = lambda w: f"WHERE {' AND '.join(w)}" if w else ""
+        if match and qv:
+            # hybrid: reciprocal rank fusion of keyword order and cosine order, same filters on both
+            score = {id: 1 / (RRF + n) for n, (id,) in enumerate(db.execute(f"SELECT rowid FROM items {clause(where)} ORDER BY rank", args))}
+            vecs = db.execute(f"SELECT rowid, vec FROM items {clause(where[1:] + ['vec IS NOT NULL'])}", args[1:]).fetchall()
+            qv = np.frombuffer(qv[0], np.float16).astype(np.float32)
+            sims = np.frombuffer(b"".join(v for _, v in vecs), np.float16).reshape(len(vecs), qv.size).astype(np.float32) @ qv
+            for n, i in enumerate(i for i in np.argsort(-sims)[:SEM_TOP] if sims[i] >= max(SEM_MIN, sims.max() - SEM_GAP)):
+                score[vecs[i][0]] = score.get(vecs[i][0], 0) + 1 / (RRF + n)
+            ids = sorted(score, key={"old": lambda i: i, "new": lambda i: -i}.get(sort, lambda i: (-score[i], -i)))[offset:offset + limit]
+            found = {r["id"]: row(r) for r in db.execute(f"SELECT {COLS} FROM items WHERE rowid IN ({','.join('?' * len(ids))})", ids)}
+            return [found[i] for i in ids]
+        order = {"old": "rowid", "new": "rowid DESC"}.get(sort) or ("rank, rowid DESC" if match else "rowid DESC")
+        sql = f"SELECT {COLS} FROM items {clause(where)} ORDER BY {order} LIMIT ? OFFSET ?"
+        return [row(r) for r in db.execute(sql, (*args, limit, offset))]
 
 
 @locked
