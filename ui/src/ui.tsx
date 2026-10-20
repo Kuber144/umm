@@ -182,7 +182,7 @@ export function Menu({ options, value, onPick, label, className = 'pick', tip, k
         <button key={o.value} type="button" tabIndex={-1} role={value === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={value === undefined ? undefined : o.value === value}
           className={(i === at ? 'at' : '') + (o.danger ? ' danger' : '')} disabled={o.disabled}
           onMouseDown={e => e.preventDefault()} onMouseMove={() => !o.disabled && at !== i && setAt(i)} onClick={() => pick(o)}>
-          {value !== undefined && (o.value === value ? <Icon name="check" /> : <i className="nocheck" />)}{o.label}
+          {value !== undefined && (o.value === value ? <Icon name="check" /> : <i className="nocheck" />)}<span className="lbl">{o.label}</span>
         </button>
       ))}
     </div>}

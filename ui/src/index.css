@@ -67,6 +67,7 @@ kbd { font: 500 11px/16px var(--font); color: var(--ink-3); border-radius: 4px; 
 .menu.checks button { padding-left: 6px; }
 .menu .ic { width: 13px; height: 13px; }
 .menu .nocheck { width: 13px; flex: none; }
+.menu .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .menu .appic { width: 16px; height: 16px; }
 .menu .dot { margin: 0 2px; }
 .menu .n { margin-left: auto; padding-left: 20px; color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; }

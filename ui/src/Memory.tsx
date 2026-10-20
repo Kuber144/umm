@@ -224,7 +224,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
         {tools.map(([ic, label, keys, fn]) => <button key={label} className="tool" data-tip={label} data-keys={keys} aria-label={label} onClick={fn}><Icon name={ic} /></button>)}
         <span className="gap" />
         <Menu className="tool" label="Move to profile" tip="Move to profile" options={[{ value: '', label: 'Move to', disabled: true }, ...profiles.filter(p => p.value !== it.profile)]} onPick={p => act.move([it], p)}><Icon name="move" /></Menu>
-        <button className="tool" data-tip="Delete" data-keys="Delete" aria-label="Delete" onClick={() => act.del([it])}><Icon name="trash" /></button>
+        <button className="tool" data-tip="Delete item" data-keys="Delete" aria-label="Delete" onClick={() => act.del([it])}><Icon name="trash" /></button>
       </header>
       <div className={'pbody ' + it.kind}>
         {body}
