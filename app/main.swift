@@ -20,6 +20,10 @@ final class DropView: WKWebView {
         evaluateJavaScript("window.ummDrop?.(" + String(decoding: (try? JSONSerialization.data(withJSONObject: ["paths": p])) ?? Data("{}".utf8), as: UTF8.self) + ")")
         return true
     }
+    // the empty top of the sidebar (200 by 52 points) moves the window. WebKit has no drag region for the page
+    func strip(_ p: NSPoint) -> Bool { p.x < 200 && (isFlipped ? p.y : bounds.height - p.y) < 52 }
+    override func hitTest(_ p: NSPoint) -> NSView? { strip(convert(p, from: superview)) ? self : super.hitTest(p) }
+    override func mouseDown(with e: NSEvent) { strip(convert(e.locationInWindow, from: nil)) ? window?.performDrag(with: e) : super.mouseDown(with: e) }
 }
 
 final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
