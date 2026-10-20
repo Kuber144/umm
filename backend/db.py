@@ -28,7 +28,7 @@ def location():
 
 if not os.environ.get("UMM_DATA") and not POINTER.exists() and not (BASE / "umm.db").exists() and (OLD / "umm.db").exists():
     BASE.mkdir(parents=True, exist_ok=True)
-    for f in OLD.iterdir():
+    for f in sorted(OLD.iterdir(), key=lambda f: f.name == "umm.db"):  # the database last, so a move cut short runs again
         if f.name not in KEEP:
             shutil.move(f, BASE / f.name)
     print(f"umm: moved the data in {OLD} to {BASE}", file=sys.stderr)  # stderr, MCP owns stdout
