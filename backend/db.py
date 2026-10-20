@@ -95,11 +95,13 @@ def add(content, kind=None, file=None, app=None, profile=None, meta=None):
 
 def enrich(id, url):
     """Fetch title and text for a saved link. Puts them in meta.link and appends them to content so FTS finds them."""
-    info = link.ENRICH and link.fetch(url)
+    info = link.ENRICH and link.fetch(url, FILES / "icons")
     if info:
-        db.execute("UPDATE items SET content = content || ?, meta = json_set(coalesce(meta, '{}'), '$.link', json(?)) "
+        icon = info.pop("icon")  # meta.icon is a file name under /api/files/, shared by every link on that host
+        db.execute("UPDATE items SET content = content || ?, "
+                   "meta = json_set(coalesce(meta, '{}'), '$.link', json(?), '$.icon', ?) "
                    "WHERE rowid = ? AND kind = 'link' AND json_extract(meta, '$.link') IS NULL",
-                   ("\n" + "\n".join(info.values()), json.dumps(info), id))
+                   ("\n" + "\n".join(info.values()), json.dumps(info), icon, id))
         db.commit()
 
 
