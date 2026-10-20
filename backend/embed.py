@@ -6,8 +6,8 @@ import sys
 import threading
 from pathlib import Path
 
-DIR = Path(__file__).resolve().parent.parent / "data" / "model"
-ONNX = DIR / "onnx" / "model_quantized.onnx"
+DIR = Path(sys.argv[1]) if __name__ == "__main__" else None  # <data>/model, db.py sets it and passes it to the child
+ONNX = "onnx/model_quantized.onnx"
 IDLE = 180
 MAXLEN = 256
 lock = threading.Lock()
@@ -26,7 +26,7 @@ def child():
             hf_hub_download(repo, name, revision=rev, local_dir=DIR)
     opts = ort.SessionOptions()
     opts.enable_cpu_mem_arena = False  # saves ~100 MB of peak memory, same speed
-    sess = ort.InferenceSession(ONNX, opts, providers=["CPUExecutionProvider"])
+    sess = ort.InferenceSession(DIR / ONNX, opts, providers=["CPUExecutionProvider"])
     sp = spm.SentencePieceProcessor(model_file=str(DIR / "sentencepiece.bpe.model"))
     for line in sys.stdin:
         # XLM-R ids are sentencepiece ids + 1, with <s>=0, <pad>=1, </s>=2
@@ -48,14 +48,14 @@ def stop():
 def embed(texts, query=False):
     """One float16 vector (bytes) per text, None if the model is missing or fails. Only saves download it, searches never wait."""
     global proc, timer
-    if query and not ONNX.exists():
+    if query and not (DIR / ONNX).exists():
         return None
     with lock:
         if timer:
             timer.cancel()
         try:
             if proc is None or proc.poll() is not None:
-                proc = subprocess.Popen([sys.executable, __file__], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+                proc = subprocess.Popen([sys.executable, __file__, str(DIR)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
             proc.stdin.write(json.dumps([("query: " if query else "passage: ") + t for t in texts]) + "\n")
             proc.stdin.flush()
             out = [base64.b64decode(x) for x in json.loads(proc.stdout.readline())]

@@ -1,7 +1,9 @@
 import functools
 import json
 import os
+import shutil
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
@@ -11,11 +13,29 @@ import numpy as np
 import embed
 import link
 
-os.umask(0o077)  # data/ is private to the user
-DATA = Path(__file__).resolve().parent.parent / "data"
+os.umask(0o077)  # the data folder is private to the user
+BASE = Path.home() / "Library" / "Application Support" / "umm"  # fixed: the location pointer, socket and log
+POINTER = BASE / "location"  # absolute path of the data folder, absent means BASE
+KEEP = {"location", "umm.sock", "umm.log"}  # belong to BASE, never moved with the data
+OLD = Path(__file__).resolve().parent.parent / "data"  # the data folder before it could move
+
+
+def location():
+    """UMM_DATA, else the pointer file, else BASE."""
+    return Path(os.environ.get("UMM_DATA") or (POINTER.read_text().strip() if POINTER.exists() else BASE))
+
+
+if not os.environ.get("UMM_DATA") and not POINTER.exists() and not (BASE / "umm.db").exists() and (OLD / "umm.db").exists():
+    BASE.mkdir(parents=True, exist_ok=True)
+    for f in OLD.iterdir():
+        if f.name not in KEEP:
+            shutil.move(f, BASE / f.name)
+    print(f"umm: moved the data in {OLD} to {BASE}", file=sys.stderr)  # stderr, MCP owns stdout
+DATA = location()
 FILES = DATA / "files"
 FILES.mkdir(parents=True, exist_ok=True)
 DATA.chmod(0o700)
+embed.DIR = DATA / "model"
 MAX_CONTENT = 100_000  # characters
 PROFILE = DATA / "profile.txt"
 EXTRA = DATA / "profiles.txt"  # created profiles, one per line, so empty ones persist
@@ -302,6 +322,23 @@ def delete(id):
 
 
 @locked
+def copy_to(path):
+    """Backs up the database to path under the write lock, so MCP servers can't write meanwhile, checks it opens and writes the pointer."""
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        src, dst = sqlite3.connect(DATA / "umm.db"), sqlite3.connect(path / "umm.db")  # a backup from db itself waits forever on its own lock
+        src.backup(dst)
+        src.close()
+        dst.close()
+        n = sqlite3.connect(path / "umm.db").execute("SELECT count(*) FROM items").fetchone()[0]
+        if n != db.execute("SELECT count(*) FROM items").fetchone()[0]:
+            raise sqlite3.DatabaseError(f"the copy in {path} has {n} items")
+        POINTER.write_text(str(path))
+    finally:
+        db.rollback()
+
+
+@locked
 def get(id):
     r = db.execute(f"SELECT {COLS} FROM items WHERE rowid = ?", (id,)).fetchone()
     return row(r) if r else None
@@ -309,7 +346,7 @@ def get(id):
 
 @locked
 def agents():
-    """Connected MCP servers, from the files they write to data/agents. Dead ones are dropped after 30 days."""
+    """Connected MCP servers, from the files they write to <data>/agents. Dead ones are dropped after 30 days."""
     counts = dict(db.execute("SELECT json_extract(meta, '$.session'), count(*) FROM items GROUP BY 1").fetchall())
     out = []
     for f in (DATA / "agents").glob("*.json"):

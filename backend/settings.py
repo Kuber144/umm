@@ -3,13 +3,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from db import DATA
-
-FILE = DATA / "settings.json"
+import db
 
 
 class Settings(BaseModel):
-    """The defaults live here. data/settings.json only holds what the person changed."""
+    """The defaults live here. <data>/settings.json only holds what the person changed."""
     # languages you speak; free auto detect misreads short clips (it heard "hello hello" as Arabic),
     # so detection only picks the likeliest of these. An empty list allows any language
     languages: list[str] = ["en", "hi"]
@@ -22,7 +20,7 @@ class Settings(BaseModel):
 def get():
     """Read at use time, so a change needs no restart."""
     try:
-        return Settings(**json.loads(FILE.read_text())).model_dump()
+        return Settings(**json.loads((db.DATA / "settings.json").read_text())).model_dump()
     except (OSError, ValueError):
         return Settings().model_dump()
 
@@ -30,5 +28,5 @@ def get():
 def update(patch):
     """Raises ValueError (pydantic's ValidationError) on a bad value."""
     s = Settings(**{**get(), **patch}).model_dump()
-    FILE.write_text(json.dumps(s, indent=2))
+    (db.DATA / "settings.json").write_text(json.dumps(s, indent=2))
     return s

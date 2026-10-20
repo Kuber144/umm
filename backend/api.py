@@ -1,6 +1,9 @@
 import logging
 import mimetypes
+import os
 import re
+import shutil
+import sqlite3
 import subprocess
 import threading
 from datetime import datetime
@@ -12,7 +15,7 @@ from AppKit import (NSBitmapImageFileTypeJPEG, NSBitmapImageFileTypePNG, NSBitma
                     NSImageCompressionFactor, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeTIFF,
                     NSPasteboardURLReadingFileURLsOnlyKey, NSWorkspace)
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from Foundation import NSURL
 from ocrmac.ocrmac import OCR
@@ -41,6 +44,14 @@ def one_line(r):  # a traceback is 10 KB of log for one error
 
 
 logging.getLogger("uvicorn.error").addFilter(one_line)
+moving = threading.Event()  # set while the data folder moves, writes are refused so none land in the old folder
+
+
+@app.middleware("http")
+async def refuse_writes(request, call_next):
+    if moving.is_set() and request.method != "GET":
+        return JSONResponse({"detail": "umm is moving its data folder, try again in a moment"}, 503)
+    return await call_next(request)
 
 
 class Item(BaseModel):
@@ -72,6 +83,10 @@ class Shot(App):
 
 class Profile(BaseModel):
     name: ProfileName
+
+
+class Folder(BaseModel):
+    path: str
 
 
 class Rename(BaseModel):
@@ -116,7 +131,7 @@ NO_ICON = set()  # app names without an installed app, so the lookup runs once p
 
 @app.get("/api/icon")
 def icon(app: str):
-    """The installed app's icon as a 64px PNG, cached in data/files/icons. app may be a full "App: window title"."""
+    """The installed app's icon as a 64px PNG, cached in <data>/files/icons. app may be a full "App: window title"."""
     name = app.split(":")[0].strip()
     f = db.FILES / "icons" / f"app-{name}.png"
     if not f.exists():
@@ -260,6 +275,52 @@ def storage():
     return {"path": str(db.DATA), "bytes": size, "kinds": db.kinds()}
 
 
+def clear(folder):
+    """Deletes the data in folder, and the folder once empty. BASE keeps the pointer, socket and log."""
+    for p in folder.iterdir():
+        if p.name not in db.KEEP:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+    if not any(folder.iterdir()):
+        folder.rmdir()
+
+
+@app.post("/api/storage/move")
+def move_storage(f: Folder):
+    """Copies the data folder to f.path, points umm at it, deletes the old one and exits so the app restarts the backend there."""
+    old, new = db.DATA.resolve(), Path(f.path)
+    if os.environ.get("UMM_DATA"):
+        raise HTTPException(400, "UMM_DATA is set, unset it to move the data folder")
+    if not new.is_absolute():
+        raise HTTPException(400, "the folder must be an absolute path")
+    new = new.resolve()
+    if new.is_relative_to(old):
+        raise HTTPException(400, "the folder can't be inside the current data folder")
+    if (r := record.status())["on"] or r["transcribing"]:
+        raise HTTPException(409, "wait for the recording to finish")
+    try:
+        new.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(400, f"can't create {new}: {e.strerror}")
+    if not os.access(new, os.W_OK):
+        raise HTTPException(400, f"{new} is not writable")
+    if set(os.listdir(new)) - db.KEEP:
+        raise HTTPException(400, f"{new} is not empty")
+    moving.set()
+    try:
+        shutil.copytree(old, new, dirs_exist_ok=True, ignore=lambda d, names: db.KEEP | {"umm.db", "umm.db-wal", "umm.db-shm"} if d == str(old) else ())
+        db.copy_to(new)
+    except (OSError, sqlite3.Error) as e:
+        clear(new)
+        moving.clear()
+        raise HTTPException(500, f"the move failed and nothing changed: {e}")
+    logging.getLogger("uvicorn.error").info(f"moved the data folder from {old} to {new}")
+    try:
+        clear(old)
+    finally:
+        threading.Timer(0.5, os._exit, [0]).start()  # after the reply. Exit 0 makes the app restart the backend at once
+    return {"path": str(new)}
+
+
 @app.get("/api/profiles")
 def profiles():
     return {"active": db.active_profile(), "all": db.profiles()}
@@ -330,7 +391,7 @@ def agents():
 @app.get("/api/setup")
 def setup():
     """Commands that connect agents and install the CLI, with this checkout's path."""
-    root = db.DATA.parent
+    root = Path(__file__).resolve().parent.parent
     return {"mcp": f'claude mcp add umm -s user -- uv run --project "{root}/backend" "{root}/backend/mcp_server.py"',
             "cli": f'uv tool install --editable "{root}/cli"'}
 
