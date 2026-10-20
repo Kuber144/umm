@@ -1,8 +1,10 @@
+import filecmp
 import logging
 import mimetypes
 import re
 import subprocess
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -24,7 +26,17 @@ import record
 import settings
 
 app = FastAPI()
+
+
+def expire():  # at start and once a day, so screenshot_days applies without a restart
+    while True:
+        if days := settings.get()["screenshot_days"]:
+            db.expire(days)
+        time.sleep(86400)
+
+
 threading.Thread(target=db.backfill, daemon=True).start()
+threading.Thread(target=expire, daemon=True).start()
 record.recover()  # recordings a quit or crash left without an item
 db.embed_later()  # backfill items saved before search by meaning existed, or while the model was missing
 
@@ -68,6 +80,19 @@ class Shot(App):
     display: int | None = None  # 1-based, as in screencapture -D. Omitted means the main display.
     area: bool = False  # interactive region selection
     profile: ProfileName | None = None
+
+
+class Import(App):
+    path: Nonempty
+    profile: ProfileName | None = None
+
+
+class Id(BaseModel):
+    id: int
+
+
+class Open(Id):
+    reveal: bool = False
 
 
 class Profile(BaseModel):
@@ -173,14 +198,19 @@ def clipboard():
 
 
 @app.get("/api/context")
-def context():
+def context(url: str | None = None):  # url is the page or document Swift read over Accessibility
     kind, value = clipboard()
     return {"app": front_window(), "profile": db.active_profile(), "clipboard_kind": kind,
-            "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status()}
+            "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status(), "url": url}
 
 
 def save_shot(name, app_name, meta=None, profile=None):
     """OCR and thumbnail the screenshot already written to FILES/name, then save it."""
+    # the same image saved in the last 10 minutes returns that item, so a repeated capture adds nothing
+    for id, _, f in db.recent(profile or db.active_profile(), "screenshot", 600):
+        if f and (db.FILES / f).is_file() and filecmp.cmp(db.FILES / f, db.FILES / name, shallow=False):
+            (db.FILES / name).unlink()
+            return id
     # worker threads have no autorelease pool, so Vision objects would leak without one
     with objc.autorelease_pool():
         text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
@@ -239,6 +269,23 @@ def save_clipboard(a: App | None = None):
     if kind == "text":
         return {"ids": [db.add(value, app=app_name, meta=a and a.meta)]}
     raise HTTPException(400, "clipboard is empty")
+
+
+IMAGES = {"png", "jpeg", "heic", "gif", "tiff", "webp"}  # formats sips reads, by content, not extension
+
+
+@app.post("/api/import")
+def import_file(i: Import):
+    """An image file becomes a screenshot with OCR, anything else a path item."""
+    p = Path(i.path).expanduser()
+    if not p.is_absolute() or not p.exists():
+        raise HTTPException(400, f"no file at {i.path}")
+    meta = i.meta or {"source": "app"}  # files are dropped on the main window
+    if p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition(" ")[2] in IMAGES:
+        name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
+        subprocess.run(["sips", "-s", "format", "jpeg", str(p), "--out", str(db.FILES / name)], capture_output=True, check=True)
+        return {"id": save_shot(name, i.app, meta, i.profile)}
+    return {"id": db.add(str(p), "path", app=i.app, profile=i.profile, meta=meta)}
 
 
 @app.get("/api/settings")
@@ -313,6 +360,30 @@ def record_stop():
 @app.post("/api/copy")
 def copy(t: Text):
     run("pbcopy", input=t.text)
+    return {}
+
+
+@app.post("/api/copy-image")
+def copy_image(o: Id):
+    it = db.get(o.id)
+    if not it or it["kind"] != "screenshot" or not it["file"] or not (db.FILES / it["file"]).is_file():
+        raise HTTPException(404, "no screenshot image with that id")
+    with objc.autorelease_pool():
+        rep = NSBitmapImageRep.imageRepWithContentsOfFile_(str(db.FILES / it["file"]))
+        pb = NSPasteboard.generalPasteboard()
+        pb.clearContents()
+        pb.setData_forType_(rep.representationUsingType_properties_(NSBitmapImageFileTypePNG, {}), NSPasteboardTypePNG)  # macOS adds TIFF on request
+    return {}
+
+
+@app.post("/api/open")
+def open_item(o: Open):
+    """Open the item's file in its default app, or reveal it in Finder. A path item's file is its path."""
+    it = db.get(o.id)
+    f = it and (db.FILES / it["file"] if it["file"] else Path(it["content"].strip()).expanduser() if it["kind"] == "path" else None)
+    if not f or not f.exists():
+        raise HTTPException(404, "the item has no file")
+    subprocess.run(["open", *(["-R"] if o.reveal else []), str(f)])
     return {}
 
 

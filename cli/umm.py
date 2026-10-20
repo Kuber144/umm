@@ -238,6 +238,14 @@ def cmd_add(a):
     dump(r) if a.json else saved(r["id"])
 
 
+def cmd_import(a):
+    if a.profile:
+        need(a.profile)
+    for f in a.files:  # the backend runs elsewhere, so send absolute paths
+        r = api("POST", "/api/import", {"path": os.path.abspath(os.path.expanduser(f)), "profile": a.profile, "meta": meta()})
+        dump(r) if a.json else saved(r["id"])
+
+
 def find(a, q=""):
     items = api("GET", "/api/items", params={
         "q": q, "profile": "*" if a.all else a.profile, "kind": a.kind, "app": a.app, "since": a.since,
@@ -289,7 +297,7 @@ def cmd_open(a):
         target = Path(it["content"].strip()).expanduser()
         cmd = ["open", "-R", str(target)]
     else:
-        raise Fail(f"#{a.id} is a text note, nothing to open (try: umm show {a.id})")
+        raise Fail(f"#{a.id} has no file or link to open (try: umm show {a.id})")
     if isinstance(target, Path) and not target.exists():
         raise Fail(f"file is gone: {target}")
     subprocess.run(cmd, check=True)
@@ -548,6 +556,11 @@ def parser():
             eg='umm add "call the dentist"\numm add                 write a longer note in $EDITOR\numm add -c              save the clipboard\npbpaste | umm add\necho ~/Documents/plan.pdf | umm add\numm add -p work "ship friday"')
     s.add_argument("text", nargs="*", help="what to save, multi-line is fine (default: stdin, or $EDITOR in a terminal)")
     s.add_argument("-c", "--clipboard", action="store_true", help="save the clipboard")
+    arg(s, "-p", "--profile", metavar="NAME", help="save into this profile (default: the active one)")
+
+    s = cmd(sub, "import", cmd_import, "save files: images as screenshots with OCR, anything else as a path", parents=[js],
+            eg="umm import ~/Desktop/receipt.png\numm import *.heic -p work\numm import ~/Documents/plan.pdf")
+    arg(s, "files", nargs="+", metavar="file", complete="_files")
     arg(s, "-p", "--profile", metavar="NAME", help="save into this profile (default: the active one)")
 
     s = cmd(sub, "search", lambda a: find(a, " ".join(a.query)), "full text search", "find", "s", parents=[filt],
