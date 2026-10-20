@@ -6,7 +6,7 @@ import { AppIcon, Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
 import icon from '../../assets/icon.svg'
 import './hotbar.css'
 
-type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void; edit?: () => void; save?: () => void; thumb?: string }
+type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void; edit?: () => void; save?: () => void; thumb?: string; full?: ReactNode }
 type Mode = 'menu' | 'note' | 'profiles' | 'clip'
 // what a note does on Cmd+Enter: header, footer hint
 const THEN = { save: ['', 'save'], shot: ['Then takes a screenshot', 'screenshot'], rec: ['Then starts recording', 'record'], clip: ['Edit, then save', 'save'] }
@@ -25,7 +25,7 @@ export default function Hotbar() {
   const [cnote, setCnote] = useState('')  // combo notes are fresh, so the plain draft in `note` survives
   const [hist, setHist] = useState<{ text?: string; image?: string; at: string }[]>([])
   const [mems, setMems] = useState<Item[]>([])
-  const [peek, setPeek] = useState<number | null>(null)
+  const [peek, setPeek] = useState(false)
   const [profiles, setProfiles] = useState<Profiles>({ active: '', all: [] })
   const [rec, setRec] = useState(ctx?.recording ?? { on: false, seconds: 0, transcribing: 0 })
   const root = useRef<HTMLDivElement>(null)
@@ -39,7 +39,7 @@ export default function Hotbar() {
     // Swift sends {} when the context fetch fails, so every field gets a default. A half-written note survives a reopen.
     const show = (raw: Partial<Ctx>, mode?: string) => {
       const c: Ctx = { app: '', profile: '', clipboard: '', clipboard_kind: null, recording: { on: false, seconds: 0, transcribing: 0 }, ...raw }
-      setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setArmed(false); setMems([]); setPeek(null); setShown(n => n + 1)
+      setCtx(c); setRec(c.recording); setMode('menu'); setQ(''); setSel(-1); setArmed(false); setMems([]); setPeek(false); setShown(n => n + 1)
       if (mode === 'clip') api.clipHistory().then(h => { setHist(h); setMode('clip') }, () => {})  // Ctrl+Shift+V opens straight into the history
     }
     window.ummShow = show
@@ -115,7 +115,8 @@ export default function Hotbar() {
     return { id: '' + i, icon: 'clip', label: what, thumb: h.image, detail: <span className="peek">{ago(h.at)}</span>,
       run: () => { api.clipRestore(h.at).then(() => send({ type: 'paste', detail: what }), fail) },
       save: () => { api.clipSave(h.at).then(() => send({ type: 'saved', kind: 'clip', label: h.text ? 'Clipboard saved' : 'Image saved', detail: h.text ? what : undefined }), fail) },
-      edit: h.text ? () => openNote('clip', h.text) : undefined }
+      edit: h.text ? () => openNote('clip', h.text) : undefined,
+      full: h.text ? chars(h.text, 20000) : <img src={fileUrl(h.image!)} alt="" /> }
   })
   // the generic search row goes last while typing, so a specific match wins Enter
   const hits = menu.filter(r => !query || r.id === 'find' || match(r.label + ' ' + r.kw))
@@ -127,9 +128,11 @@ export default function Hotbar() {
   const prefix = rows.findIndex(r => r.label.toLowerCase().startsWith(query))
   const at = sel >= 0 ? Math.min(sel, Math.max(0, total - 1))
     : !query || mode !== 'menu' ? 0 : prefix >= 0 ? prefix : memRows.length ? rows.length : rows.findIndex(r => r.id === 'find')
-  useEffect(() => { root.current?.querySelector('li.on')?.scrollIntoView({ block: 'nearest' }); setPeek(null) }, [at])
+  useEffect(() => { root.current?.querySelector('li.on')?.scrollIntoView({ block: 'nearest' }); setPeek(false) }, [at, mode])
   const pm = memRows[at - rows.length]
-  const open = pm && pm.id === peek ? pm : null
+  // Space shows the whole entry. With an empty box a space cannot be typing, so it works before any arrow key.
+  const pv = mode === 'clip' ? rows[at]?.full : pm && (pm.kind === 'screenshot' && pm.file ? <img src={'/api/thumb/' + pm.file} alt="" /> : chars(pm.kind === 'link' ? [pm.meta?.url, pm.meta?.link?.title].filter(Boolean).join('\n') || pm.content : pm.content, 20000))
+  const canPeek = !!pv && (sel >= 0 || !q)
 
   const run = (i: number) => {
     if (i < rows.length) return rows[i].run()
@@ -154,16 +157,16 @@ export default function Hotbar() {
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, at - 1)) }
     else if (e.key === 'Enter' && !e.metaKey) { e.preventDefault(); run(at) }
     else if (e.key === 'Enter' && mode === 'clip' && rows[at]?.save) { e.preventDefault(); rows[at].save!() }
-    else if (e.key === ' ' && mode === 'menu' && sel >= 0 && pm) { e.preventDefault(); setPeek(open ? null : pm.id) }
+    else if (e.key === ' ' && canPeek) { e.preventDefault(); setPeek(!peek) }
     else if (e.key === 'Tab' && rows[at]?.edit) { e.preventDefault(); rows[at].edit!() }
-    else if (e.key === 'Escape') { e.preventDefault(); if (open) setPeek(null); else if (mode !== 'menu') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
+    else if (e.key === 'Escape') { e.preventDefault(); if (peek) setPeek(false); else if (mode !== 'menu') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
   }
 
   const tile = (r: Row) => <span className="tile">{r.thumb ? <img className="thumb" src={fileUrl(r.thumb)} alt="" /> : r.icon === 'dot' ? <Dot name={r.label} /> : <Icon name={r.icon} />}</span>
   const foot = (
     <footer>
       <span className="fprof" title="Active profile: new saves land here"><Dot name={active || 'user'} />{active}</span>
-      <span className="hint">{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> {THEN[then][1]} <Kbd>Esc</Kbd> back</> : mode === 'clip' ? <><Kbd>Enter</Kbd> paste <Kbd>Cmd Enter</Kbd> save <Kbd>Tab</Kbd> edit <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
+      <span className="hint">{canPeek && mode !== 'note' && <><Kbd>Space</Kbd> {peek ? 'hide' : 'preview'}</>}{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> {THEN[then][1]} <Kbd>Esc</Kbd> back</> : mode === 'clip' ? <><Kbd>Enter</Kbd> paste <Kbd>Cmd Enter</Kbd> save <Kbd>Tab</Kbd> edit <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
     </footer>
   )
 
@@ -212,7 +215,7 @@ export default function Hotbar() {
               })}
             </ul>
           )}
-          {open && <div className="peekbox">{open.kind === 'screenshot' && open.file ? <img src={'/api/thumb/' + open.file} alt="" /> : chars(open.kind === 'link' ? [open.meta?.url, open.meta?.link?.title].filter(Boolean).join('\n') || open.content : open.content, 1200)}</div>}
+          {peek && pv && <div className="peekbox">{pv}</div>}
         </>
       )}
       {foot}
