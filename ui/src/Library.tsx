@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { api, type Agent, type Item, type Kind, type Origin, type Profiles, type Rec } from './api'
-import { pending, send } from './bridge'
+import { native, pending, send } from './bridge'
 import Connections from './Connections'
-import { Detail, Row, copyText, projectName, type Act } from './Memory'
+import { Glyph, Preview, Row, Zoom, copyText, projectName, type Act } from './Memory'
 import Settings from './Settings'
 import { AppIcon, Dot, Icon, Kbd, Pop, SOURCES, clock } from './ui'
 import icon from '../../assets/icon.svg'
 import './main.css'
 
 const PAGE = 40
-const KINDS: [Kind, string][] = [['screenshot', 'Screenshots'], ['text', 'Notes'], ['path', 'Paths'], ['link', 'Links'], ['voice', 'Voice']]
+const KINDS: [Kind, string][] = [['screenshot', 'Screenshots'], ['text', 'Notes'], ['link', 'Links'], ['path', 'Paths'], ['voice', 'Voice']]
 const EMPTY: Record<string, string> = {
-  user: 'Press Ctrl+Shift+Space, then Enter, to keep what is on your screen. Or write something above.',
+  user: 'Press Ctrl+Shift+Space, then Enter, to keep what is on your screen. Or drop a file or some text here.',
   agent: 'Ask Claude to remember something and it shows up here.',
 }
 const day = (v: string) => new Date(v + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
+const typing = (t: EventTarget | null) => /^(INPUT|TEXTAREA|SELECT)$/.test((t as HTMLElement)?.tagName)
 // totals per key, most first, from GET /api/origins rows
 const tally = (rows: Origin[], key: 'source' | 'agent' | 'cwd') => {
   const m = new Map<string, number>()
@@ -25,21 +26,20 @@ const tally = (rows: Origin[], key: 'source' | 'agent' | 'cwd') => {
 
 type View = 'list' | 'settings' | 'connections'
 
-// The note box keeps its own text, so typing does not re-render the list.
-function Composer({ to, onSave, box }: { to: string; onSave: (text: string) => Promise<unknown>; box: React.RefObject<HTMLTextAreaElement | null> }) {
+// A new note opens in the preview pane. It keeps its own text, so typing does not re-render the list.
+function NewNote({ to, onSave, onClose }: { to: string; onSave: (text: string) => Promise<unknown>; onClose: () => void }) {
   const [draft, setDraft] = useState('')
-  const grow = (el: HTMLTextAreaElement) => { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 220) + 'px' }
-  const save = () => { if (draft.trim()) onSave(draft.trim()).then(() => { setDraft(''); if (box.current) box.current.style.height = '' }, () => {}) }
+  const save = () => { if (draft.trim()) onSave(draft.trim()).then(onClose, () => {}) }
   return (
-    <div className={'composer' + (draft ? ' has' : '')}>
-      <textarea ref={box} rows={1} value={draft} onChange={e => { setDraft(e.target.value); grow(e.currentTarget) }}
-        placeholder="Write a note" aria-label="Write a note"
-        onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); save() } }} />
-      <div className="cbar">
-        <span className="to">Saves to <Dot name={to} />{to}</span>
-        <button className="btn primary" disabled={!draft.trim()} onClick={save}>Save <Kbd>Cmd Enter</Kbd></button>
-      </div>
-    </div>
+    <section className="pane compose" aria-label="New note">
+      <header className="phead"><b>New note</b><span className="to">in <Dot name={to} />{to}</span></header>
+      <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)} placeholder="Write it down" aria-label="Note"
+        onKeyDown={e => {
+          if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); save() }
+          if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+        }} />
+      <footer><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!draft.trim()} onClick={save}>Save <Kbd>Cmd Enter</Kbd></button></footer>
+    </section>
   )
 }
 
@@ -66,20 +66,24 @@ export default function Library() {
   const [failed, setFailed] = useState(false)
   const [rec, setRec] = useState<Rec>({ on: false, seconds: 0, transcribing: 0 })
   const [sel, setSel] = useState(-1)
-  const [detail, setDetail] = useState<number | null>(null)
+  const [picked, setPicked] = useState<number[]>([])  // ids, only while more than one row is selected
+  const [zoom, setZoom] = useState<number | null>(null)
+  const [composing, setComposing] = useState(false)
+  const [drag, setDrag] = useState(false)
   const [toast, setToast] = useState<{ msg: string; undo?: boolean } | null>(null)
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [confirmDel, setConfirmDel] = useState(false)
   const [, tick] = useReducer(x => x + 1, 0)
   const searchRef = useRef<HTMLInputElement>(null)
-  const composerRef = useRef<HTMLTextAreaElement>(null)
   const sentinel = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const seq = useRef(0)
   const busy = useRef(false)
+  const anchor = useRef(-1)
+  const base = useRef<number[]>([])  // picks made before the anchor, kept by Shift ranges
   const toastTimer = useRef(0)
-  const del = useRef<{ it: Item; timer: number } | null>(null)
+  const del = useRef<{ its: Item[]; timer: number } | null>(null)
 
   const list = items
   const sortNow = sort === 'relevance' && !q.trim() ? 'new' : sort || (q.trim() ? 'relevance' : 'new')
@@ -87,12 +91,13 @@ export default function Library() {
     q: q.trim(), profile: scope, kind: kinds.join(','), app, since, until, sort: sortNow, limit, offset,
     source, agent, project, session: session?.session,
   })
-  const refresh = (limit = PAGE) => {
+  const refresh = (limit = PAGE, first = false) => {
     const n = ++seq.current
     const lim = Math.min(200, limit)  // the API caps a page at 200
     return page(0, lim).then(r => {
       if (n !== seq.current) return
       setItems(r); setMore(r.length >= lim); setLoaded(true); setFailed(false)
+      if (first) { setSel(r.length ? 0 : -1); setPicked([]); anchor.current = 0 }
     }, () => { setLoaded(true); setFailed(true) })
   }
   // Browsing a profile is only UI state. The active profile, where hotkey saves go, changes in Settings and the hotbar.
@@ -106,23 +111,27 @@ export default function Library() {
     toastTimer.current = window.setTimeout(() => setToast(null), ms)
   }
 
-  // Deleting waits a few seconds so it can be undone. Only then are the row and its file removed.
+  // Deleting waits a few seconds so it can be undone, a batch at once. Only then are the rows and their files removed.
   const flush = () => {
     const d = del.current
     if (!d) return
     clearTimeout(d.timer); del.current = null; setToast(null)
-    api.del(d.it.id).then(refreshProfiles, () => { say('Could not delete'); refresh() })
+    Promise.all(d.its.map(it => api.del(it.id))).then(refreshProfiles, () => { say('Could not delete'); refresh(items.length) })
   }
-  const remove = (it: Item) => {
+  const remove = (its: Item[]) => {
+    if (!its.length) return
     flush()
-    setItems(l => l.filter(x => x.id !== it.id))
+    const ids = new Set(its.map(x => x.id))
+    setItems(l => l.filter(x => !ids.has(x.id)))
+    setPicked([]); setSel(s => Math.min(s, list.length - its.length - 1))
     clearTimeout(toastTimer.current)
-    setToast({ msg: 'Deleted', undo: true })
-    del.current = { it, timer: window.setTimeout(flush, 6000) }
+    setToast({ msg: its.length > 1 ? `Deleted ${its.length} memories` : 'Deleted', undo: true })
+    del.current = { its, timer: window.setTimeout(flush, 6000) }
   }
   const undo = () => {
     if (!del.current) return
-    clearTimeout(del.current.timer); del.current = null; setToast(null); refresh(items.length + 1)
+    const n = del.current.its.length
+    clearTimeout(del.current.timer); del.current = null; setToast(null); refresh(items.length + n)
   }
   useEffect(() => { window.addEventListener('pagehide', flush); return () => window.removeEventListener('pagehide', flush) })
 
@@ -131,23 +140,49 @@ export default function Library() {
     copy: it => api.copy(copyText(it)).then(() => say('Copied'), () => say('Could not copy')),
     reveal: it => api.reveal(it.content),
     del: remove,
-    move: (it, p) => api.edit(it.id, { profile: p }).then(() => { say(`Moved to ${p}`); refresh(items.length); refreshProfiles() }),
+    move: (its, p) => Promise.all(its.map(it => api.edit(it.id, { profile: p }))).then(() => {
+      say(`Moved ${its.length > 1 ? its.length + ' memories ' : ''}to ${p}`); setPicked([]); refresh(items.length); refreshProfiles()
+    }, () => say('Could not move')),
     save: (it, content) => api.edit(it.id, { content }).then(() => { refresh(items.length) }, e => { say('Could not save'); throw e }),
-    zoom: it => setDetail(it.id),
+    zoom: it => setZoom(it.id),
+    shot: (it, what) => (what === 'copy' ? api.copyImage(it.id) : api.open(it.id, what === 'reveal'))
+      .then(() => what === 'copy' && say('Image copied'), () => say(what === 'copy' ? 'Could not copy the image' : 'Could not open the screenshot')),
   }
   // one object for the life of the page that calls the latest handlers, so memoized rows don't re-render
   const act = useMemo(() => new Proxy({} as Act, { get: (_, k: keyof Act) => (...a: never[]) => (acts.current[k] as (...a: never[]) => void)(...a) }), [])
-  const primary = (it: Item) => (it.kind === 'screenshot' ? setDetail(it.id) : it.kind === 'link' ? send({ type: 'openExternal', url: copyText(it) }) : act.copy(it))
+  const open = (it: Item) => (it.kind === 'screenshot' ? setZoom(it.id) : it.kind === 'link' ? send({ type: 'openExternal', url: copyText(it) }) : act.copy(it))
+
+  // Click selects one row, Cmd-click adds or removes a row, Shift-click selects the range from the last plain pick.
+  const ids = (a: number, b: number) => list.slice(Math.min(a, b), Math.max(a, b) + 1).map(x => x.id)
+  const pickAt = (i: number, how: { metaKey?: boolean; shiftKey?: boolean } = {}) => {
+    const id = list[i]?.id
+    if (id === undefined) return
+    setComposing(false)
+    if (how.shiftKey && anchor.current >= 0) setPicked([...new Set([...base.current, ...ids(anchor.current, i)])])
+    else if (how.metaKey) {
+      const now = picked.length ? picked : list[sel] ? [list[sel].id] : []
+      const next = now.includes(id) ? now.filter(x => x !== id) : [...now, id]
+      setPicked(next); anchor.current = i; base.current = next
+    } else { setPicked([]); anchor.current = i; base.current = [] }
+    setSel(i)
+  }
+  const pickRef = useRef(pickAt)
+  pickRef.current = pickAt
+  const onPick = useMemo(() => (i: number, e: React.MouseEvent) => pickRef.current(i, e), [])
+  const onOpen = useMemo(() => (it: Item) => openRef.current(it), [])
+  const openRef = useRef(open)
+  openRef.current = open
+  const chosen = picked.length > 1 ? list.filter(x => picked.includes(x.id)) : list[sel] ? [list[sel]] : []
 
   const clearFilters = () => { setQ(''); setKinds([]); setApp(''); setSince(''); setUntil(''); setSource(''); setAgent(''); setProject(''); setSession(null) }
   const go = (name: string) => {
-    flush(); setView('list'); setScope(name); setApp(''); setAgent(''); setProject(''); setSession(null); setSel(-1); setConfirmDel(false); setRenaming(null)
+    flush(); setView('list'); setScope(name); setApp(''); setAgent(''); setProject(''); setSession(null); setConfirmDel(false); setRenaming(null); setComposing(false)
   }
   const openSession = (a: Agent) => { go('*'); clearFilters(); setSession(a) }
   const names = useMemo(() => profiles.all.map(p => p.name).sort((a, b) => +(b === 'user') - +(a === 'user') || +(b === 'agent') - +(a === 'agent') || a.localeCompare(b)), [profiles])
   const order = [...names, '*']
   const count = (n: string) => (n === '*' ? profiles.all.reduce((s, p) => s + p.count, 0) : profiles.all.find(p => p.name === n)?.count ?? 0)
-  const custom = scope !== '*' && scope !== 'user' && scope !== 'agent'
+  const custom = !!scope && scope !== '*' && scope !== 'user' && scope !== 'agent'
   const filtered = !!(q.trim() || kinds.length || app || since || until || source || agent || project || session)
 
   // initial load and refresh when the window regains focus (hotkey saves happen while it is hidden)
@@ -159,7 +194,7 @@ export default function Library() {
   })
   useEffect(() => {
     if (!scope) return
-    const t = setTimeout(() => { refresh(); setSel(-1) }, 120)
+    const t = setTimeout(() => refresh(PAGE, true), 120)
     return () => clearTimeout(t)
   }, [scope, q, kinds, app, since, until, sort, source, agent, project, session]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -199,49 +234,92 @@ export default function Library() {
     return () => io.disconnect()
   }) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // native bridge
+  // a note goes to the profile on screen, All profiles uses the active one
+  const saveTo = scope && scope !== '*' ? scope : profiles.active
+  const saved = (n = 1) => { say(n > 1 ? `Saved ${n}` : 'Saved'); refresh(items.length + n, true); refreshProfiles() }
+  const save = (text: string) => api.add(text, 'app', undefined, saveTo).then(() => saved(), e => { say('Could not save'); throw e })
+
+  // native bridge: open with a query, files dropped on the window
   useEffect(() => {
-    const open = (o: { query?: string }) => { setQ(o.query ?? ''); setDetail(null); setView('list'); searchRef.current?.focus(); refreshProfiles() }
-    window.ummOpen = open
-    if (pending.open) { open(pending.open); pending.open = undefined }
+    const show = (o: { query?: string }) => { setQ(o.query ?? ''); setZoom(null); setView('list'); searchRef.current?.focus(); refreshProfiles() }
+    window.ummOpen = show
+    if (pending.open) { show(pending.open); pending.open = undefined }
     return () => { window.ummOpen = undefined }
   }, [])
+  useEffect(() => {
+    window.ummDrop = ({ paths }) => {
+      setDrag(false)
+      Promise.allSettled(paths.map(p => api.import(p, saveTo))).then(r => {
+        const ok = r.filter(x => x.status === 'fulfilled').length
+        if (ok) saved(ok)
+        if (ok < r.length) say(ok ? `Saved ${ok}, ${r.length - ok} could not be saved` : 'Could not save what was dropped', 3000)
+      })
+    }
+    return () => { window.ummDrop = undefined }
+  })
+  // Text and links dropped or pasted on the window become a note. Files dropped are Swift's job (ummDrop).
+  useEffect(() => {
+    const over = (e: DragEvent) => { if (view !== 'list') return; e.preventDefault(); setDrag(true) }
+    const leave = (e: DragEvent) => { if (!e.relatedTarget) setDrag(false) }
+    const drop = (e: DragEvent) => {
+      e.preventDefault(); setDrag(false)
+      const dt = e.dataTransfer
+      if (!dt || view !== 'list') return
+      if (dt.files.length) { if (!native) say('Drop files on the umm app window to save them', 3000); return }
+      const text = (dt.getData('text/uri-list').split('\n').find(l => l && !l.startsWith('#')) || dt.getData('text/plain')).trim()
+      if (text) save(text).catch(() => {})
+    }
+    const paste = (e: ClipboardEvent) => {
+      if (typing(e.target) || view !== 'list' || !e.clipboardData) return
+      e.preventDefault()
+      const text = e.clipboardData.getData('text/plain').trim()
+      // an image or copied files: the backend reads the clipboard itself
+      if (e.clipboardData.files.length || !text) api.saveClipboard(undefined, 'app', saveTo).then(r => saved((r as { ids?: number[] }).ids?.length || 1), () => say('Nothing to save on the clipboard'))
+      else save(text).catch(() => {})
+    }
+    window.addEventListener('dragover', over); window.addEventListener('dragleave', leave); window.addEventListener('drop', drop); window.addEventListener('paste', paste)
+    return () => { window.removeEventListener('dragover', over); window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop); window.removeEventListener('paste', paste) }
+  })
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (detail !== null) return
+      if (zoom !== null) return
       if (e.metaKey && e.key === ',') { e.preventDefault(); setView(v => (v === 'settings' ? 'list' : 'settings')); return }
       const t = e.target as HTMLElement
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)
       const search = searchRef.current
       if (e.metaKey && /^[1-9]$/.test(e.key)) { if (order[+e.key - 1]) { e.preventDefault(); go(order[+e.key - 1]) } return }
       if (view !== 'list') return
       if (e.metaKey && e.key === 'k') { e.preventDefault(); search?.focus(); search?.select(); return }
-      if (e.metaKey && e.key === 'n') { e.preventDefault(); composerRef.current?.focus(); return }
-      if (typing) {
+      if (e.metaKey && e.key === 'n') { e.preventDefault(); setComposing(true); return }
+      if (typing(t)) {
         if (t === search && e.key === 'Escape') { if (q) setQ(''); else t.blur() }
-        else if (t === search && e.key === 'ArrowDown' && list.length) { e.preventDefault(); t.blur(); setSel(0) }
-        else if (t === composerRef.current && e.key === 'Escape') t.blur()
+        else if (t === search && e.key === 'ArrowDown' && list.length) { e.preventDefault(); t.blur(); listRef.current?.focus(); pickAt(Math.max(0, sel)) }
         return
       }
-      const it = list[sel]
-      // Enter and Delete act on the selected row only when no button or link has focus
+      // Enter, Space and Delete act on the selection only when no button or link has focus
       const free = t === document.body || t === listRef.current
-      if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); setSel(s => Math.min(list.length - 1, s + 1)) }
-      else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); setSel(s => (s <= 0 && q ? (search?.focus(), -1) : Math.max(0, s - 1))) }
-      else if (e.key === 'Enter' && it && free) { e.preventDefault(); primary(it) }
-      else if ((e.key === 'Backspace' || e.key === 'Delete') && it && free) { e.preventDefault(); remove(it); setSel(s => Math.min(s, list.length - 2)) }
-      else if (e.key === 'Escape') setSel(-1)
+      const it = list[sel]
+      const step = (d: number) => {
+        e.preventDefault()
+        const i = Math.max(0, Math.min(list.length - 1, sel + d))
+        if (e.key === 'ArrowUp' && sel <= 0 && q && !e.shiftKey) { search?.focus(); setSel(-1); return }
+        if (e.shiftKey && anchor.current < 0) anchor.current = Math.max(sel, 0)
+        pickAt(i, { shiftKey: e.shiftKey })
+      }
+      if (e.key === 'ArrowDown' || e.key === 'j') step(1)
+      else if (e.key === 'ArrowUp' || e.key === 'k') step(-1)
+      else if (e.metaKey && e.key === 'a' && list.length) { e.preventDefault(); setPicked(list.map(x => x.id)) }
+      else if (e.metaKey && e.key === 'c' && it && getSelection()?.isCollapsed) { e.preventDefault(); act.copy(it) }
+      else if (e.key === 'Enter' && it && free) { e.preventDefault(); open(it) }
+      else if (e.key === ' ' && it?.kind === 'screenshot' && free) { e.preventDefault(); setZoom(it.id) }
+      else if ((e.key === 'Backspace' || e.key === 'Delete') && chosen.length && free) { e.preventDefault(); remove(chosen) }
+      else if (e.key === 'Escape') { if (composing) setComposing(false); else if (picked.length) setPicked([]); else setSel(-1) }
       else if (e.key === '/') { e.preventDefault(); search?.focus() }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   })
 
-  // a note goes to the profile on screen, All profiles uses the active one
-  const saveTo = scope && scope !== '*' ? scope : profiles.active
-  const save = (text: string) => api.add(text, 'app', undefined, saveTo)
-    .then(() => { say('Saved'); refresh(items.length + 1); refreshProfiles() }, e => { say('Could not save'); throw e })
   const create = (v: string) => {
     setCreating(false)
     const name = v.trim().replace(/^\*$/, '')
@@ -252,13 +330,12 @@ export default function Library() {
     setRenaming(null)
     if (to && to !== scope) api.renameProfile(scope, to).then(() => { setScope(to); refreshProfiles() }, () => say('Could not rename'))
   }
-  const detailIt = items.find(i => i.id === detail)
-  const step = (d: number) => {
+  const zoomIt = items.find(i => i.id === zoom)
+  const stepZoom = (d: number) => {
     const shots = items.filter(i => i.kind === 'screenshot')
-    const n = shots[shots.findIndex(i => i.id === detail) + d]
-    if (n) setDetail(n.id)
+    const n = shots[shots.findIndex(i => i.id === zoom) + d]
+    if (n) { setZoom(n.id); setSel(items.indexOf(n)) }
   }
-  const grid = kinds.length === 1 && kinds[0] === 'screenshot'
 
   const agents = tally(origins, 'agent')
   const projects = tally(origins.filter(o => o.source === 'mcp'), 'cwd')
@@ -266,16 +343,50 @@ export default function Library() {
   const n = count(scope)
   const caption = filtered ? (list.length ? `${list.length}${more ? '+' : ''} ${list.length === 1 ? 'result' : 'results'}` : 'No results')
     : scope === 'agent' && agents.length
-    ? `${plural(n, 'memory', 'memories')} from ${plural(agents.length, 'agent')} in ${plural(projects.length, 'project')}`
-    : `${plural(n, 'memory', 'memories')}${scope === '*' ? ' across all profiles' : ''}`
-  const nFilters = +!!app + +!!since + +!!until + +!!source + +!!(agent && scope !== 'agent') + +!!(project && scope !== 'agent')
-  const sortLabel = { new: 'Newest first', old: 'Oldest first', relevance: 'Best match' }[sortNow]
+    ? `${plural(n, 'memory', 'memories')} from ${plural(agents.length, 'agent')}`
+    : plural(n, 'memory', 'memories')
+  const nFilters = +!!app + +!!since + +!!until + +!!source + +!!(agent && scope !== 'agent') + +!!(project && scope !== 'agent') + +(sort !== '' && sortNow !== (q.trim() ? 'relevance' : 'new'))
   const chip = (on: boolean, set: () => void, label: React.ReactNode, n: number, key: string) =>
     <button key={key} className={'chip' + (on ? ' on' : '')} aria-pressed={on} onClick={set}>{label}<span className="n">{n}</span></button>
   const side = (v: View, ic: 'plug' | 'gear', label: string, extra: React.ReactNode) =>
     <button className={'prof' + (view === v ? ' on' : '')} onClick={() => { flush(); setView(view === v ? 'list' : v) }}>
       <Icon name={ic} /><span className="name">{label}</span>{extra}
     </button>
+
+  const pane = composing ? <NewNote to={saveTo} onSave={save} onClose={() => setComposing(false)} />
+    : chosen.length > 1 ? (
+      <section className="pane bulk" aria-label="Selection">
+        <div className="stack">{chosen.slice(0, 4).map(it => <span key={it.id}><Glyph it={it} /></span>)}</div>
+        <h2>{plural(chosen.length, 'memory', 'memories')} selected</h2>
+        <div className="btns">
+          <label className="btn pick"><Icon name="move" />Move to...
+            <select value="" onChange={e => e.target.value && act.move(chosen, e.target.value)} aria-label="Move to profile">
+              <option value="">Move to...</option>
+              {names.map(p => <option key={p}>{p}</option>)}
+            </select>
+          </label>
+          <button className="btn danger" onClick={() => remove(chosen)}><Icon name="trash" />Delete {chosen.length}</button>
+        </div>
+        <p className="dim"><Kbd>Esc</Kbd> clears the selection</p>
+      </section>
+    ) : chosen[0] ? <Preview key={chosen[0].id} it={chosen[0]} q={q} act={act} profiles={names} />
+    : (
+      <section className="pane none">
+        {loaded && !list.length && !filtered ? <>
+          <img src={icon} alt="" />
+          <h2>Nothing here yet</h2>
+          <p>{EMPTY[scope] ?? 'Drop a file or some text here, or press Ctrl+Shift+Space anywhere.'}</p>
+          <button className="btn primary" onClick={() => setComposing(true)}><Icon name="plus" />New note</button>
+        </> : loaded && !list.length ? <>
+          <h2>Nothing matches</h2>
+          <p>Try fewer words or remove a filter.</p>
+          <div className="btns">
+            {scope !== '*' && <button className="btn" onClick={() => go('*')}>Search all profiles</button>}
+            <button className="btn" onClick={clearFilters}>Clear filters</button>
+          </div>
+        </> : loaded && <p className="dim">Select a memory to see it here</p>}
+      </section>
+    )
 
   return (
     <div className="shell">
@@ -313,9 +424,9 @@ export default function Library() {
             <div className="h">
               {renaming !== null
                 ? <input className="rename" autoFocus defaultValue={scope} onBlur={e => rename(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.currentTarget.value = scope; e.currentTarget.blur() } }} />
-                : <h1>{scope === '*' ? 'All profiles' : scope}</h1>}
+                : <h1>{scope === '*' ? 'All profiles' : scope || 'umm'}</h1>}
               {custom && renaming === null && (
-                <Pop trigger={t => <button className="icon" onClick={t} title="Profile options" aria-label="Profile options"><Icon name="more" /></button>}>
+                <Pop trigger={t => <button className="icon" onClick={t} title="Profile options" aria-label="Profile options"><Icon name="caret" /></button>}>
                   {close => <div className="menu">
                     <button onClick={() => { close(); setRenaming(scope) }}>Rename</button>
                     <button className="danger" onClick={() => { close(); setConfirmDel(true) }}>Delete profile</button>
@@ -325,120 +436,115 @@ export default function Library() {
             </div>
             {confirmDel
               ? <p>Delete {scope} and its {plural(n, 'item')}? <button className="link-btn danger" onClick={() => api.delProfile(scope).then(() => { go('user'); refreshProfiles() }, () => say('Could not delete'))}>Delete</button> <button className="link-btn" onClick={() => setConfirmDel(false)}>Keep</button></p>
-              : <p>{caption}</p>}
+              : <p>{failed ? 'Not connected' : caption}</p>}
           </div>
           <label className="search">
             <Icon name="search" />
             <input ref={searchRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Search" aria-label="Search" spellCheck={false} />
             {q ? <button className="clear" onClick={() => setQ('')} aria-label="Clear search"><Icon name="x" /></button> : <Kbd>Cmd K</Kbd>}
           </label>
-          <button className={'rec' + (rec.on ? ' on' : '')} onClick={toggleRec} title={rec.on ? 'Stop recording' : 'Record your voice'}>
-            {rec.on ? <><i className="recdot" />{clock(rec.seconds)}</> : rec.transcribing ? <><Icon name="voice" />Transcribing</> : <><Icon name="voice" />Record</>}
+          <button className={'tbtn rec' + (rec.on ? ' on' : '')} onClick={toggleRec} title={rec.on ? 'Stop recording' : 'Record a voice note'} aria-label={rec.on ? 'Stop recording' : 'Record a voice note'}>
+            {rec.on ? <><i className="recdot" />{clock(rec.seconds)}</> : rec.transcribing ? <><Icon name="voice" />Transcribing</> : <Icon name="voice" />}
           </button>
+          <button className="tbtn new" onClick={() => setComposing(true)} title="New note (Cmd N)"><Icon name="plus" />New note</button>
         </header>
 
-        <Composer to={saveTo} onSave={save} box={composerRef} />
-
-        <div className="tabs">
-          <div className="kinds" role="tablist">
-            {([[null, 'All'], ...KINDS] as [Kind | null, string][]).map(([k, label]) => {
-              const on = k ? kinds[0] === k : !kinds.length
-              return <button key={label} role="tab" aria-selected={on} className={'tab' + (on ? ' on' : '')} onClick={() => setKinds(k ? [k] : [])}>{label}</button>
-            })}
+        {failed ? (
+          <div className="empty">
+            <img src={icon} alt="" />
+            <h2>Cannot reach the umm backend</h2>
+            <p>Your memories are safe on disk. The app restarts the backend on its own, and this page tries again every 2 seconds.</p>
+            <div><button className="btn" onClick={() => { refreshProfiles(); if (scope) refresh() }}>Retry now</button></div>
           </div>
-          <span className="gap" />
-          <label className="sortpick">{sortLabel}<Icon name="caret" />
-            <select value={sortNow} onChange={e => setSort(e.target.value)} aria-label="Sort">
-              <option value="new">Newest first</option>
-              <option value="old">Oldest first</option>
-              <option value="relevance" disabled={!q.trim()}>Best match</option>
-            </select>
-          </label>
-          <Pop trigger={t => <button className={'tab filter' + (nFilters ? ' on' : '')} onClick={t}><Icon name="filter" />Filter{nFilters ? <span className="n">{nFilters}</span> : null}</button>}>
-            {() => <div className="fields">
-              <label>App
-                <select value={app} onChange={e => setApp(e.target.value)}>
-                  <option value="">Any app</option>
-                  {apps.map(a => <option key={a.app} value={a.app}>{a.app} ({a.count})</option>)}
-                </select>
-              </label>
-              {sources.length > 1 && <label>Saved from
-                <select value={source} onChange={e => setSource(e.target.value)}>
-                  <option value="">Anywhere</option>
-                  {sources.map(([s, c]) => <option key={s} value={s}>{SOURCES[s]?.[1] ?? s} ({c})</option>)}
-                </select>
-              </label>}
-              {agents.length > 0 && scope !== 'agent' && <label>Agent
-                <select value={agent} onChange={e => setAgent(e.target.value)}>
-                  <option value="">Any agent</option>
-                  {agents.map(([a, c]) => <option key={a} value={a}>{a} ({c})</option>)}
-                </select>
-              </label>}
-              {projects.length > 0 && scope !== 'agent' && <label>Project
-                <select value={project} onChange={e => setProject(e.target.value)}>
-                  <option value="">Any project</option>
-                  {projects.map(([p, c]) => <option key={p} value={p}>{projectName(p)} ({c})</option>)}
-                </select>
-              </label>}
-              <div className="pair">
-                <label>From<input type="date" value={since} max={until || undefined} onChange={e => setSince(e.target.value)} /></label>
-                <label>Until<input type="date" value={until} min={since || undefined} onChange={e => setUntil(e.target.value)} /></label>
+        ) : <div className="split">
+          <div className="col">
+            <div className="scope">
+              <div className="seg" role="tablist" aria-label="Kind">
+                {([[null, 'All'], ...KINDS] as [Kind | null, string][]).map(([k, label]) => {
+                  const on = k ? kinds[0] === k : !kinds.length
+                  return <button key={label} role="tab" aria-selected={on} className={on ? 'on' : ''} title={label} aria-label={label} onClick={() => setKinds(k ? [k] : [])}>{k ? <Icon name={k} /> : 'All'}</button>
+                })}
               </div>
-            </div>}
-          </Pop>
-        </div>
-        {scope === 'agent' && agents.length > 0 && (
-          <div className="facets">
-            {agents.length > 1 && agents.map(([a, c]) => chip(agent === a, () => setAgent(agent === a ? '' : a), <><AppIcon name={a} />{a}</>, c, a))}
-            {agents.length > 1 && <i className="sep" />}
-            {projects.map(([p, c]) => chip(project === p, () => setProject(project === p ? '' : p), <><Icon name="path" /><span title={p}>{projectName(p)}</span></>, c, p))}
-          </div>
-        )}
-        {(nFilters > 0 || session) && (
-          <div className="active">
-            {session && <button className="tag" onClick={() => setSession(null)}><AppIcon name={session.agent} />{session.agent} session in {projectName(session.cwd)}<Icon name="x" /></button>}
-            {app && <button className="tag" onClick={() => setApp('')}><AppIcon name={app} />{app}<Icon name="x" /></button>}
-            {source && <button className="tag" onClick={() => setSource('')}>From {SOURCES[source]?.[1].toLowerCase() ?? source}<Icon name="x" /></button>}
-            {agent && scope !== 'agent' && <button className="tag" onClick={() => setAgent('')}><AppIcon name={agent} />{agent}<Icon name="x" /></button>}
-            {project && scope !== 'agent' && <button className="tag" onClick={() => setProject('')}>{projectName(project)}<Icon name="x" /></button>}
-            {since && <button className="tag" onClick={() => setSince('')}>From {day(since)}<Icon name="x" /></button>}
-            {until && <button className="tag" onClick={() => setUntil('')}>Until {day(until)}<Icon name="x" /></button>}
-            <button className="link-btn" onClick={clearFilters}>Clear all</button>
-          </div>
-        )}
-
-        <div className="scroll">
-          {!loaded && !failed && <ul className="list skel" aria-hidden="true">{[0, 1, 2, 3].map(i => <li key={i} className="row"><span className="gut"><i /></span><div className="body"><i /></div></li>)}</ul>}
-          {failed ? (
-            <div className="empty">
-              <img src={icon} alt="" />
-              <h2>Cannot reach the umm backend</h2>
-              <p>Your memories are safe on disk. The app restarts the backend on its own, and this page tries again every 2 seconds.</p>
-              <div><button className="btn" onClick={() => { refreshProfiles(); if (scope) refresh() }}>Retry now</button></div>
+              <span className="gap" />
+              <Pop trigger={t => <button className={'icon' + (nFilters ? ' lit' : '')} onClick={t} title="Sort and filter" aria-label="Sort and filter"><Icon name="filter" />{nFilters ? <span className="n">{nFilters}</span> : null}</button>}>
+                {() => <div className="fields">
+                  <label>Sort
+                    <select value={sortNow} onChange={e => setSort(e.target.value)}>
+                      <option value="new">Newest first</option>
+                      <option value="old">Oldest first</option>
+                      <option value="relevance" disabled={!q.trim()}>Best match</option>
+                    </select>
+                  </label>
+                  <label>App
+                    <select value={app} onChange={e => setApp(e.target.value)}>
+                      <option value="">Any app</option>
+                      {apps.map(a => <option key={a.app} value={a.app}>{a.app} ({a.count})</option>)}
+                    </select>
+                  </label>
+                  {sources.length > 1 && <label>Saved with
+                    <select value={source} onChange={e => setSource(e.target.value)}>
+                      <option value="">Anything</option>
+                      {sources.map(([s, c]) => <option key={s} value={s}>{SOURCES[s]?.[1] ?? s} ({c})</option>)}
+                    </select>
+                  </label>}
+                  {agents.length > 0 && scope !== 'agent' && <label>Agent
+                    <select value={agent} onChange={e => setAgent(e.target.value)}>
+                      <option value="">Any agent</option>
+                      {agents.map(([a, c]) => <option key={a} value={a}>{a} ({c})</option>)}
+                    </select>
+                  </label>}
+                  {projects.length > 0 && scope !== 'agent' && <label>Project
+                    <select value={project} onChange={e => setProject(e.target.value)}>
+                      <option value="">Any project</option>
+                      {projects.map(([p, c]) => <option key={p} value={p}>{projectName(p)} ({c})</option>)}
+                    </select>
+                  </label>}
+                  <div className="pair">
+                    <label>From<input type="date" value={since} max={until || undefined} onChange={e => setSince(e.target.value)} /></label>
+                    <label>Until<input type="date" value={until} min={since || undefined} onChange={e => setUntil(e.target.value)} /></label>
+                  </div>
+                </div>}
+              </Pop>
             </div>
-          ) : list.length > 0 ? (
-            <ul ref={listRef} className={'list' + (grid ? ' grid' : '')} role="listbox" tabIndex={0} aria-label="Memories"
-              aria-activedescendant={list[sel] ? 'm' + list[sel].id : undefined} onFocus={e => e.target === e.currentTarget && sel < 0 && setSel(0)}>
-              {list.map((it, i) => (
-                <Row key={it.id} it={it} i={i} q={q} sel={i === sel} all={scope === '*'} profiles={names} act={act} onSelect={setSel} />
-              ))}
-            </ul>
-          ) : loaded && (
-            <div className="empty">
-              <img src={icon} alt="" />
-              <h2>{filtered ? 'Nothing matches' : 'Nothing here yet'}</h2>
-              <p>{filtered ? 'Try fewer words or remove a filter.' : EMPTY[scope] ?? 'Write something in the box above, or press Ctrl+Shift+Space anywhere.'}</p>
-              {filtered && <div>
-                {scope !== '*' && <button className="btn" onClick={() => go('*')}>Search all profiles</button>}
-                <button className="btn" onClick={clearFilters}>Clear filters</button>
-              </div>}
+            {scope === 'agent' && agents.length > 0 && (
+              <div className="facets">
+                {agents.length > 1 && agents.map(([a, c]) => chip(agent === a, () => setAgent(agent === a ? '' : a), <><AppIcon name={a} />{a}</>, c, a))}
+                {projects.map(([p, c]) => chip(project === p, () => setProject(project === p ? '' : p), <><Icon name="path" /><span title={p}>{projectName(p)}</span></>, c, p))}
+              </div>
+            )}
+            {(nFilters > 0 || session) && (
+              <div className="facets">
+                {session && <button className="tag" onClick={() => setSession(null)}><AppIcon name={session.agent} />{session.agent} in {projectName(session.cwd)}<Icon name="x" /></button>}
+                {app && <button className="tag" onClick={() => setApp('')}><AppIcon name={app} />{app}<Icon name="x" /></button>}
+                {source && <button className="tag" onClick={() => setSource('')}>{SOURCES[source]?.[1] ?? source}<Icon name="x" /></button>}
+                {agent && scope !== 'agent' && <button className="tag" onClick={() => setAgent('')}><AppIcon name={agent} />{agent}<Icon name="x" /></button>}
+                {project && scope !== 'agent' && <button className="tag" onClick={() => setProject('')}>{projectName(project)}<Icon name="x" /></button>}
+                {since && <button className="tag" onClick={() => setSince('')}>From {day(since)}<Icon name="x" /></button>}
+                {until && <button className="tag" onClick={() => setUntil('')}>Until {day(until)}<Icon name="x" /></button>}
+                {sort && sortNow === 'old' && <button className="tag" onClick={() => setSort('')}>Oldest first<Icon name="x" /></button>}
+                <button className="link-btn" onClick={() => { clearFilters(); setSort('') }}>Clear</button>
+              </div>
+            )}
+            <div className="scroll">
+              {!loaded && <ul className="list skel" aria-hidden="true">{[0, 1, 2, 3, 4].map(i => <li key={i} className="row"><span className="lead"><i /></span><span className="l1"><i /></span><span className="l2"><i /></span></li>)}</ul>}
+              {list.length > 0 ? (
+                <ul ref={listRef} className="list" role="listbox" tabIndex={0} aria-label="Memories" aria-multiselectable
+                  aria-activedescendant={list[sel] ? 'm' + list[sel].id : undefined} onFocus={e => e.target === e.currentTarget && sel < 0 && pickAt(0)}>
+                  {list.map((it, i) => (
+                    <Row key={it.id} it={it} i={i} q={q} cur={i === sel} on={!composing && (picked.length > 1 ? picked.includes(it.id) : i === sel)}
+                      all={scope === '*'} onPick={onPick} onOpen={onOpen} />
+                  ))}
+                </ul>
+              ) : loaded && filtered && <p className="nolist">No matches</p>}
+              {more && <div ref={sentinel} className="more-sentinel">Loading more</div>}
             </div>
-          )}
-          {more && <div ref={sentinel} className="more-sentinel">Loading more</div>}
-        </div>
+          </div>
+          {pane}
+        </div>}
+        {drag && <div className="dropzone"><div><Icon name="plus" /><b>Drop to save in {saveTo}</b><span>Images become screenshots with their text. Files are saved as paths, text and links as notes.</span></div></div>}
         {toast && <div className="toast" role="status">{toast.msg}{toast.undo && <button onClick={undo}>Undo</button>}</div>}
       </main>}
-      {detailIt && <Detail it={detailIt} act={act} onClose={() => setDetail(null)} step={step} />}
+      {zoomIt && <Zoom it={zoomIt} act={act} onClose={() => setZoom(null)} step={stepZoom} />}
     </div>
   )
 }

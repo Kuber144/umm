@@ -21,6 +21,7 @@ const paths = {
   more: <><circle cx="3.5" cy="8" r=".6" /><circle cx="8" cy="8" r=".6" /><circle cx="12.5" cy="8" r=".6" /></>,
   plus: <path d="M8 3.5v9M3.5 8h9" />,
   play: <path d="M5.5 3.8v8.4L12.2 8z" />,
+  pause: <path d="M5.5 3.8v8.4M10.5 3.8v8.4" />,
   filter: <path d="M2.5 4.5h11M4.8 8h6.4M7 11.5h2" />,
   caret: <path d="M4.5 6.5L8 10l3.5-3.5" />,
   chevron: <path d="M6.5 4.5L10 8l-3.5 3.5" />,
@@ -108,6 +109,16 @@ export function hl(text: string, q: string): ReactNode {
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' })
 export const when = (s: string) => new Date(s.replace(' ', 'T'))
+// Mail style list time: 14:52 today, then Yesterday, a weekday, a date.
+export function stamp(s: string) {
+  const d = when(s), days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5)
+  if (days < 1) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (days < 2) return 'Yesterday'
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'long' })
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' })
+}
+export const home = (p: string) => p.replace(/^\/Users\/[^/]+/, '~')
+export const full = (s: string) => when(s).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' })
 export function ago(s: string) {
   const d = (Date.now() - when(s).getTime()) / 1000
   if (d < 45) return 'just now'

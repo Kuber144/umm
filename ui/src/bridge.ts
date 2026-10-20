@@ -7,13 +7,15 @@ type Msg =
   | { type: 'resize'; height: number }
   | { type: 'openExternal'; url: string }
   | { type: 'loginItem'; on: boolean }
-  | { type: 'settings' }
+  | { type: 'settings' | 'chooseFolder' | 'accessibility' }
 
 declare global {
   interface Window {
     webkit?: { messageHandlers?: { umm?: { postMessage(m: Msg): void } } }
     ummShow?: (c: Ctx) => void
-    ummSettings?: (s: { loginItem?: 'on' | 'approval' | 'off' | 'missing'; version?: string }) => void
+    ummSettings?: (s: { loginItem?: 'on' | 'approval' | 'off' | 'missing'; version?: string; accessibility?: boolean }) => void
+    ummFolder?: (path: string) => void
+    ummDrop?: (d: { paths: string[] }) => void
     ummOpen?: (o: { query?: string }) => void
   }
 }
