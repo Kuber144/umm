@@ -1,6 +1,7 @@
 import mimetypes
 import re
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
@@ -16,6 +17,7 @@ import db
 import record
 
 app = FastAPI()
+threading.Thread(target=db.backfill, daemon=True).start()
 
 Nonempty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 # "*" means all profiles in GET /api/items, so it can't be a profile name
