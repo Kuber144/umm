@@ -24,7 +24,7 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `umm.log`, `umm.sock`.
+- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `umm.log`, `umm.sock`.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
@@ -45,7 +45,7 @@ All JSON. Paths are the same over the socket and in the Vite dev proxy.
 ```
 Item = {id, profile, kind, content, file, app, meta, created_at}
 kind: screenshot | text | path | link | voice
-file: name under /api/files/ (screenshot jpg or voice m4a), else null
+file: name under /api/files/ (screenshot jpg or voice m4a), else null. Screenshots also have /api/thumb/{file}, 640px wide
 app:  "App: window title" of the app the user was in. For MCP saves: "<agent name>: <project folder name>"
 meta: JSON object or null. MCP saves set {agent, agent_version, cwd, session}: the client name and version
       from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
@@ -58,7 +58,7 @@ GET    /api/apps?profile=                                -> [{app, count}]   app
 POST   /api/items      {content, app?, profile?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?}                            -> {id}     screenshot + OCR, takes ~1s
+POST   /api/capture    {app?}                            -> {id}     screenshot + OCR + thumbnail, takes ~1s
 GET    /api/context                                      -> {app, profile, clipboard, recording}
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
@@ -70,6 +70,7 @@ POST   /api/record/stop                                  -> same, transcription 
 POST   /api/copy       {text}                            -> {}       puts text on the clipboard
 POST   /api/reveal     {text}                            -> {}       reveals a path in Finder
 GET    /api/files/{name}                                 -> file
+GET    /api/thumb/{name}                                 -> jpg      thumbnail of a screenshot, made on first request for old ones
 ```
 
 ## Native bridge

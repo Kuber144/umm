@@ -7,6 +7,7 @@ from typing import Annotated
 
 import objc
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from ocrmac.ocrmac import OCR
 from pydantic import BaseModel, Field, StringConstraints
@@ -98,16 +99,37 @@ def context():
             "recording": record.status()}
 
 
+def save_shot(name, app_name):
+    """OCR and thumbnail the screenshot already written to FILES/name, then save it."""
+    # worker threads have no autorelease pool, so Vision objects would leak without one
+    with objc.autorelease_pool():
+        text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
+    thumb(name)
+    return db.add(text, "screenshot", name, app_name)
+
+
+def thumb(name):
+    """Small copy of a screenshot next to it. Old screenshots get one on first request."""
+    t = db.thumb(name)
+    if not t.exists():
+        subprocess.run(["sips", "-Z", "640", str(db.FILES / name), "--out", str(t)], capture_output=True, check=True)
+    return t
+
+
+@app.get("/api/thumb/{name}")
+def get_thumb(name: str):
+    if not name.endswith(".jpg") or not (db.FILES / Path(name).name).is_file():
+        raise HTTPException(404)
+    return FileResponse(thumb(Path(name).name))
+
+
 @app.post("/api/capture")
 def capture(a: App | None = None):
     app_name = (a and a.app) or front_window()
     # jpg is ~9x smaller than png and OCR reads the same text. Microseconds keep parallel captures from sharing a file.
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
     subprocess.run(["screencapture", "-x", "-t", "jpg", str(db.FILES / name)], check=True)
-    # worker threads have no autorelease pool, so Vision objects would leak without one
-    with objc.autorelease_pool():
-        text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
-    return {"id": db.add(text, "screenshot", name, app_name)}
+    return {"id": save_shot(name, app_name)}
 
 
 @app.get("/api/profiles")

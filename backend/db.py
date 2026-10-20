@@ -136,10 +136,15 @@ def apps(profile=None):
     return [{"app": a, "count": n} for a, n in db.execute(sql, (profile,) if where else ())]
 
 
+def thumb(name):
+    return FILES / (Path(name).stem + ".thumb.jpg")
+
+
 def delete(id):
     row = db.execute("SELECT file FROM items WHERE rowid = ?", (id,)).fetchone()
     if row and row[0]:
         (FILES / row[0]).unlink(missing_ok=True)
+        thumb(row[0]).unlink(missing_ok=True)
     db.execute("DELETE FROM items WHERE rowid = ?", (id,))
     db.commit()
 
