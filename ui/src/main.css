@@ -104,6 +104,15 @@ main.agent h1 { text-decoration: underline wavy var(--blush); text-decoration-th
 .link b { font-weight: 600; color: var(--teal-ink); }
 .link:hover b { text-decoration: underline; text-underline-offset: 3px; }
 .link span { color: var(--ink-3); }
+.card { display: grid; gap: 3px; max-width: 520px; padding: 10px 12px; border-radius: 10px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+.card:hover { box-shadow: inset 0 0 0 1.5px var(--teal); }
+.card .site { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
+.card .site .ic { flex: none; width: 13px; height: 13px; }
+.card .site > span { color: var(--ink-2); }
+.card > b { font-size: 14px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card:hover > b { color: var(--teal-ink); }
+.card .desc { font-size: 13px; line-height: 1.45; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .url { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .path { display: inline-flex; align-items: flex-start; gap: 8px; max-width: 100%; padding: 6px 10px; border-radius: 8px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); font: 12.5px/1.5 var(--mono); overflow-wrap: anywhere; }
 .path .ic { margin-top: 2px; width: 14px; height: 14px; color: var(--ink-3); }
 .path i { font-style: normal; color: var(--ink-3); }
@@ -153,3 +162,4 @@ audio { height: 32px; max-width: 280px; accent-color: var(--teal); }
 
 .prov { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; color: var(--ink-3); }
 .prov .ic { width: 13px; height: 13px; }
+.card + .txt { margin-top: 6px; }

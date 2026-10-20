@@ -42,3 +42,4 @@ kbd { font: 500 11px/1 var(--font); color: var(--ink-3); background: var(--paper
 @keyframes pulse { 50% { opacity: .3; } }
 .on .recdot { animation: pulse 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.fav { flex: none; width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }
