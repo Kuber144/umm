@@ -6,11 +6,14 @@ type Msg =
   | { type: 'recording'; on: boolean }
   | { type: 'resize'; height: number }
   | { type: 'openExternal'; url: string }
+  | { type: 'loginItem'; on: boolean }
+  | { type: 'settings' }
 
 declare global {
   interface Window {
     webkit?: { messageHandlers?: { umm?: { postMessage(m: Msg): void } } }
     ummShow?: (c: Ctx) => void
+    ummSettings?: (s: { loginItem?: 'on' | 'approval' | 'off' | 'missing'; version?: string }) => void
     ummOpen?: (o: { query?: string }) => void
   }
 }
