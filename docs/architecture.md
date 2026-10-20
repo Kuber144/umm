@@ -27,6 +27,15 @@ ui/ (React + Vite)
 - `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.flac`), `profile.txt`, `umm.log`, `umm.sock`.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it.
 
+## Profiles
+
+Profiles shape the whole UI. Every item belongs to one. Two always exist, even when empty, and can't be deleted or renamed:
+
+- `user`: what the person saves. It is the active profile by default, so hotkey saves land here.
+- `agent`: what AI agents save. MCP `remember` defaults to it, and MCP `search_memory` searches all profiles unless told otherwise.
+
+People can add more (for example `work`, `side-project`), rename them, delete them (deletes their items and files) and move items between profiles. The active profile is always visible in the hotbar and the main window.
+
 ## Backend API
 
 All JSON. Paths are the same over the socket and in the Vite dev proxy.
@@ -37,14 +46,20 @@ kind: screenshot | text | path | link | voice
 file: name under /api/files/ (screenshot jpg or voice flac), else null
 app:  "App: window title" of the app the user was in
 
-GET    /api/items?q=&profile=&kind=&limit=50&offset=0   -> [Item]   profile defaults to active, "*" = all
+GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
+         profile defaults to active, "*" = all. kind may be comma separated.
+         app filters by app name (the part before ":"). since/until are YYYY-MM-DD, inclusive.
+         sort: new | old | relevance. Default is relevance when q is set, else new.
+GET    /api/apps?profile=                                -> [{app, count}]   app names for the filter, most used first
 POST   /api/items      {content, app?, profile?}         -> {id}     kind auto detected, multi-line ok
-PATCH  /api/items/{id} {content}                         -> {}
+PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
 DELETE /api/items/{id}                                   -> {}       also deletes the file
 POST   /api/capture    {app?}                            -> {id}     screenshot + OCR, takes ~1s
 GET    /api/context                                      -> {app, profile, clipboard, recording}
-GET    /api/profiles                                     -> {active, all: [{name, count}]}
+GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
+POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent
+DELETE /api/profiles/{name}                              -> {}       deletes its items and files, not for user or agent
 GET    /api/record                                       -> {on, seconds, transcribing}
 POST   /api/record/start {app?}                          -> same as GET /api/record
 POST   /api/record/stop                                  -> same, transcription runs in background and the voice item appears when done
