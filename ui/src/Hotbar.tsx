@@ -75,7 +75,7 @@ export default function Hotbar() {
     ...(kind ? [{ id: 'clip', icon: kind === 'image' ? 'screenshot' as const : kind === 'files' ? 'files' as const : 'clip' as const, kw: 'paste copy',
       label: kind === 'image' ? 'Save clipboard image' : kind === 'files' ? `Save ${nfiles} copied file${nfiles > 1 ? 's' : ''}` : 'Save clipboard',
       detail: kind === 'image' ? null : <span className="peek">{chars(clip.replace(/\s+/g, ' '), 70)}</span>,
-      run: () => { api.saveClipboard(ctx?.app).then(() => send({ type: 'saved' }), fail) } }] : []),
+      run: () => { api.saveClipboard(ctx?.app, 'hotbar', undefined, ctx?.url).then(() => send({ type: 'saved' }), fail) } }] : []),
     { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', detail: note.trim() ? <span className="peek">{chars(note.trim(), 40)}</span> : null, run: () => setMode('note') },
     { id: 'rec', icon: 'voice', label: rec.on ? 'Stop recording' : 'Start recording', kw: 'voice mic audio',
       detail: rec.on ? <span className="live"><i className="recdot" />{clock(rec.seconds)}</span> : rec.transcribing ? <span className="peek">transcribing</span> : null,
@@ -112,7 +112,7 @@ export default function Hotbar() {
     if (m) api.copy(copyText(m)).then(() => send({ type: 'hide' }), fail)
   }
   const saveNote = () => {
-    if (note.trim()) api.add(note.trim(), 'hotbar', ctx?.app).then(() => { setNote(''); send({ type: 'saved' }) }, fail)
+    if (note.trim()) api.add(note.trim(), 'hotbar', ctx?.app, undefined, ctx?.url).then(() => { setNote(''); send({ type: 'saved' }) }, fail)
   }
   const back = () => { setMode('menu'); setQ(''); setSel(-1) }
 

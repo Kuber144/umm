@@ -47,8 +47,8 @@ export default function Connections({ onOpen }: { onOpen: (a: Agent) => void }) 
               <p>Run this once in a terminal. Claude Code then starts umm's MCP server in every session, and each one shows up here.</p>
             </div>
           )}
-          {live.length > 0 && <section><h2>Connected now</h2><ul className="conns">{live.map(row)}</ul></section>}
-          {past.length > 0 && <section><h2>Recent sessions</h2><ul className="conns">{past.map(row)}</ul></section>}
+          {live.length > 0 && <section><h2>Connected now</h2><ul className="conns group">{live.map(row)}</ul></section>}
+          {past.length > 0 && <section><h2>Recent sessions</h2><ul className="conns group">{past.map(row)}</ul></section>}
           <section>
             <h2>Connect an agent</h2>
             <p className="hint">Run this in a terminal for Claude Code. Other MCP clients take the same command in their config.</p>

@@ -185,6 +185,8 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
                                    System Settings, then reply like "settings". The grant happens later, so ask "settings" again on focus
 {type: "chooseFolder"}             folder picker (can create folders). Swift replies with window.ummFolder, nothing on cancel
 {type: "quit"}                     kill switch, quits the app and the backend
+{type: "chooseFolder"}             show a folder picker, Swift replies with window.ummFolder?.(path), or nothing on cancel
+{type: "accessibility"}            ask for the Accessibility permission (page URLs for screenshots)
 ```
 
 Swift to UI:
@@ -200,7 +202,7 @@ window.ummSettings?.({loginItem, version, accessibility})
                             reply to "settings" and "loginItem". loginItem is on | approval | off | missing.
                             approval means macOS wants the person to allow it in System Settings, Login Items.
                             version is CFBundleShortVersionString. accessibility is AXIsProcessTrusted().
-                            Browser dev never calls it and the UI hides the startup row.
+                            Browser dev never calls it and the UI hides the startup row. The UI asks again when the window regains focus.
 window.ummFolder?.(path)    reply to "chooseFolder", the absolute path of the picked folder
 ```
 
@@ -232,13 +234,21 @@ While typing, `Enter` runs a row only when the query starts its label ("scr" tak
 
 The sidebar lists profiles, then All profiles, Connections and Settings. Clicking a profile only browses it. The active profile, where hotkey saves go, changes in Settings, the hotbar "Switch profile" row, or by creating a profile. A note written in the main window goes to the profile on screen.
 
-Each row shows the app's icon (`/api/icon`), a link's site icon, or a monogram for agents and apps that are not installed. A small glyph marks items saved from the CLI or the main window. Agent memories show the agent and project folder. The agent profile has chips to narrow by agent and project, and Filter has app, source, agent, project and dates.
+The rest of the window is a toolbar (profile name, search, record, New note), a list and a preview pane. Each row is two lines: a glyph, a title and the time, then one quiet line (text snippet, site, folder, or agent and project). The glyph is a screenshot's thumbnail, the app's icon (`/api/icon`), a link's site icon, or a monogram for agents and apps that are not installed. `meta.url` shows as a link on the row and in the pane, and opens with `openExternal`. Above the list are kind filters and a Sort and filter menu (app, source, agent, project, dates). The agent profile adds chips to narrow by agent and project.
+
+The pane shows the selected item in full, with when and where it was saved. That is the screenshot and its text, the link card, the recording player with the English translation, or the path. Its actions are copy, edit, move to profile and delete. Screenshots also have Copy image, Open in Preview and Show in Finder. Clicking the image opens a full window view: click switches between fit and 100%, scrolling pans, the arrow keys step through screenshots, Esc closes. New note (`Cmd+N`) opens an editor in the pane. `Cmd+Enter` saves to the profile on screen.
+
+Keys in the list: Up and Down (or `j` and `k`) move, Shift extends the selection, `Cmd+A` selects all, Esc clears. Cmd-click adds or removes a row, Shift-click selects a range. Enter opens a link, zooms a screenshot, or copies anything else. Space zooms a screenshot. `Cmd+C` copies. Delete removes the selection, and one Undo in the toast brings the whole batch back. With several rows selected, the pane offers Move to and Delete for all of them. `Cmd+K` or `/` searches, `Cmd+1` to `Cmd+9` switch profiles, `Cmd+,` opens Settings.
+
+Dropping text or a link on the window saves it as a note. Swift handles dropped files. It calls `window.ummDrop({paths})`, and the UI posts each path to `/api/import`. Pasting with `Cmd+V` outside a text field saves text as a note, and an image or copied files through `/api/clipboard`. A drop overlay shows while something is dragged over the window.
 
 Connections lists `GET /api/agents`: connected agents with a live dot, then recent sessions, each with its project folder, last seen and memory count. Clicking one shows that session's memories across all profiles. It refreshes every 5 seconds and shows the MCP setup command.
 
 ## Settings view
 
-The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Sections: saving (which profile hotkey saves go to, same as the active profile), voice, privacy, storage, agents (the MCP command with this install's path, the CLI install command), startup, about. Every change saves at once.
+The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, the login item, the hotbar key), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once.
+
+To move the data, Change... takes a folder, typed or picked with `chooseFolder`. The data goes to `<folder>/umm`, and the UI shows that path before it posts `/api/storage/move`. The backend then restarts in the new place, so the UI polls `GET /api/storage` every second until the path changes, and gives up after 60 seconds. A 400 or 409 shows its `detail` under the field. On an older backend the UI hides the image retention row, and the move says this version cannot do it.
 
 The login item uses `SMAppService.mainApp`, which accepts the ad hoc signed bundle.
 When an excluded app is in front, the hotbar screenshot plays the error sound and the menu bar item shows "Excluded app" for 3 seconds.

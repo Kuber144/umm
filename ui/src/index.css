@@ -1,16 +1,17 @@
 /* Colours come from assets/icon.svg: teal tile, cream body, ink outline, blush cheeks, drop blue.
-   Light is cream paper with ink text. Dark is the ink outline turned into deep teal-grey surfaces with cream text.
-   Text tokens pass WCAG AA (4.5:1) on every surface they sit on. */
+   Surfaces step from the sidebar (deepest) to the list, the preview and popovers (highest).
+   Light is cream paper with ink text. Dark is the ink outline as a tonal ramp with cream text.
+   Text tokens pass WCAG AA (4.5:1) on every surface and on the selection tint. */
 :root {
   color-scheme: light dark;
-  --side: #f4edda; --paper: #fbf6e8; --card: #fffcf4; --sunk: #f3ebd5; --fill: #e9dec1;
-  --ink: #1f2a2e; --ink-2: #4a5759; --ink-3: #5f6b66;
-  --line: rgba(31, 42, 46, .09); --line-2: rgba(31, 42, 46, .17);
+  --side: #efe7d3; --paper: #f9f5ea; --card: #fffdf7; --sunk: #f1eadb; --fill: #e6dcc4;
+  --ink: #1f2a2e; --ink-2: #44514f; --ink-3: #535d59;
+  --line: rgba(31, 42, 46, .08); --line-2: rgba(31, 42, 46, .16); --sep: rgba(31, 42, 46, .13);
   --hover: rgba(31, 42, 46, .045);
-  --teal: #5fb3a5; --teal-ink: #257064; --teal-tint: rgba(95, 179, 165, .2);
-  --blush: #f29a8a; --blush-ink: #a9493a; --blush-tint: rgba(242, 154, 138, .22);
+  --teal: #5fb3a5; --teal-ink: #22695e; --teal-tint: rgba(95, 179, 165, .2); --teal-sel: rgba(95, 179, 165, .34);
+  --blush: #f29a8a; --blush-ink: #9c4036; --blush-tint: rgba(242, 154, 138, .22);
   --drop: #9ad8f0; --on-teal: #1f2a2e; --edge: #1f2a2e;
-  --mark: rgba(154, 216, 240, .55);
+  --mark: rgba(154, 216, 240, .6);
   --lift: 0 1px 2px rgba(31, 42, 46, .06), 0 8px 24px -12px rgba(31, 42, 46, .28);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --round: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
@@ -19,11 +20,11 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --side: #162022; --paper: #1c282c; --card: #223135; --sunk: #182326; --fill: #2c4044;
-    --ink: #f2ead6; --ink-2: #c3bca9; --ink-3: #959e97;
-    --line: rgba(242, 234, 214, .075); --line-2: rgba(242, 234, 214, .14);
-    --hover: rgba(242, 234, 214, .04);
-    --teal: #6cc0b1; --teal-ink: #7fd0c1; --teal-tint: rgba(108, 192, 177, .16);
+    --side: #121a1d; --paper: #172125; --card: #1c282c; --sunk: #223136; --fill: #2b3c41;
+    --ink: #eee7d4; --ink-2: #c2bcab; --ink-3: #98a19b;
+    --line: rgba(238, 231, 212, .08); --line-2: rgba(238, 231, 212, .15); --sep: #0a1012;
+    --hover: rgba(238, 231, 212, .045);
+    --teal: #6cc0b1; --teal-ink: #84d2c4; --teal-tint: rgba(108, 192, 177, .15); --teal-sel: rgba(108, 192, 177, .27);
     --blush-ink: #f4a898; --blush-tint: rgba(242, 154, 138, .16);
     --on-teal: #142024; --edge: #0d1416;
     --mark: rgba(154, 216, 240, .26);
