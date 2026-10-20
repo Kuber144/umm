@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <filter id="wobble" filterUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <clipPath id="body-clip">
+      <path id="body" d="M175 800 C150 640 215 520 365 510 C520 500 640 600 655 730 C662 800 620 825 560 825 L255 825 C205 825 182 822 175 800 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- app tile -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#5FB3A5" filter="url(#shadow)"/>
+
+  <g filter="url(#wobble)">
+  <!-- thought cloud: dark circles first, cream circles on top -->
+  <g fill="#1F2A2E" stroke="#1F2A2E" stroke-width="26">
+    <circle cx="560" cy="300" r="82"/><circle cx="665" cy="248" r="96"/>
+    <circle cx="775" cy="310" r="80"/><circle cx="740" cy="400" r="70"/>
+    <circle cx="620" cy="405" r="72"/>
+    <circle cx="585" cy="478" r="26"/><circle cx="545" cy="522" r="15"/>
+  </g>
+  <g fill="#FFF6E0">
+    <circle cx="560" cy="300" r="82"/><circle cx="665" cy="248" r="96"/>
+    <circle cx="775" cy="310" r="80"/><circle cx="740" cy="400" r="70"/>
+    <circle cx="620" cy="405" r="72"/>
+    <circle cx="585" cy="478" r="26"/><circle cx="545" cy="522" r="15"/>
+    <circle cx="672" cy="345" r="80"/>
+  </g>
+  <!-- the dots: still searching -->
+  <g fill="#1F2A2E">
+    <circle cx="595" cy="335" r="21"/><circle cx="670" cy="335" r="21"/><circle cx="745" cy="335" r="21"/>
+  </g>
+
+  <!-- character -->
+  <g transform="translate(15 25)">
+  <use href="#body" fill="#FFF6E0"/>
+  <g clip-path="url(#body-clip)">
+    <path d="M720 600 C690 760 560 850 330 860 L720 860 Z" fill="#EBD9B4"/>
+  </g>
+  <use href="#body" fill="none" stroke="#1F2A2E" stroke-width="24" stroke-linejoin="round"/>
+
+  <!-- face: eyes glance up at the cloud -->
+  <circle cx="318" cy="660" r="38" fill="#fff" stroke="#1F2A2E" stroke-width="14"/>
+  <circle cx="448" cy="652" r="38" fill="#fff" stroke="#1F2A2E" stroke-width="14"/>
+  <circle cx="332" cy="646" r="17" fill="#1F2A2E"/>
+  <circle cx="462" cy="638" r="17" fill="#1F2A2E"/>
+  <path d="M410 585 L478 568" stroke="#1F2A2E" stroke-width="14" stroke-linecap="round"/>
+  <ellipse cx="262" cy="725" rx="26" ry="15" fill="#F29A8A"/>
+  <ellipse cx="505" cy="715" rx="26" ry="15" fill="#F29A8A"/>
+  <path d="M340 745 q22 -26 44 0 t44 0" fill="none" stroke="#1F2A2E" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- sweat drop -->
+  <path d="M600 560 C575 600 575 628 600 628 C625 628 625 600 600 560 Z" fill="#9AD8F0" stroke="#1F2A2E" stroke-width="12" stroke-linejoin="round" transform="translate(64 -8)"/>
+  </g>
+  </g>
+</svg>
