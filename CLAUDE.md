@@ -5,7 +5,7 @@ Personal memory tool for macOS. `umm.app` saves screenshots with OCR text, clipb
 ## Layout
 
 - `app/` Swift. `main.swift` is the hotkey, hotbar panel, main window and menu bar item. `Backend.swift` runs the Python backend and talks to it over `data/umm.sock`. `Web.swift` is the `umm://` scheme handler. `build.sh` builds `build/umm.app`.
-- `backend/` Python (uv). `db.py` holds all SQLite access. `api.py` is the FastAPI app. `record.py` records the mic and runs Whisper. `mcp_server.py` serves agents.
+- `backend/` Python (uv). `db.py` holds all SQLite access. `api.py` is the FastAPI app. `record.py` records the mic and runs Whisper. `link.py` fetches titles and icons for saved links. `mcp_server.py` serves agents.
 - `ui/` React + Vite. One page, two views. The main window is `/` and the hotbar is `/#hotbar`. Calls `/api/*`, and the backend serves `ui/dist`.
 - `assets/` icon sources.
 - `data/` runtime files, not source. Don't commit it.
