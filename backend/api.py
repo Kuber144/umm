@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Annotated
 
 import objc
-from AppKit import (NSBitmapImageFileTypeJPEG, NSBitmapImageRep, NSImageCompressionFactor, NSPasteboard, NSPasteboardTypePNG,
-                    NSPasteboardTypeTIFF, NSPasteboardURLReadingFileURLsOnlyKey)
+from AppKit import (NSBitmapImageFileTypeJPEG, NSBitmapImageFileTypePNG, NSBitmapImageRep, NSDeviceRGBColorSpace, NSGraphicsContext,
+                    NSImageCompressionFactor, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeTIFF,
+                    NSPasteboardURLReadingFileURLsOnlyKey, NSWorkspace)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -80,13 +81,48 @@ def front_window():
 
 @app.get("/api/items")
 def items(q: str = "", profile: str = "", kind: str = "", app: str = "", since: str = "", until: str = "",
-          sort: str = "", limit: int = 50, offset: int = 0):
-    return db.search(q, profile or db.active_profile(), kind, max(0, min(limit, 200)), offset, app, since, until, sort)
+          sort: str = "", limit: int = 50, offset: int = 0, source: str = "", agent: str = "", project: str = "", session: str = ""):
+    return db.search(q, profile or db.active_profile(), kind, max(0, min(limit, 200)), offset, app, since, until, sort,
+                     agent, project, source, session)
 
 
 @app.get("/api/apps")
 def apps(profile: str = ""):
     return db.apps(profile or db.active_profile())
+
+
+@app.get("/api/origins")
+def origins(profile: str = ""):
+    return db.origins(profile or db.active_profile())
+
+
+NO_ICON = set()  # app names without an installed app, so the lookup runs once per backend start
+
+
+@app.get("/api/icon")
+def icon(app: str):
+    """The installed app's icon as a 64px PNG, cached in data/files/icons. app may be a full "App: window title"."""
+    name = app.split(":")[0].strip()
+    f = db.FILES / "icons" / f"app-{name}.png"
+    if not f.exists():
+        if not name or "/" in name or "'" in name or name in NO_ICON:
+            raise HTTPException(404)
+        with objc.autorelease_pool():
+            ws = NSWorkspace.sharedWorkspace()
+            path = ws.fullPathForApplication_(name) or run(
+                ["mdfind", f"kMDItemContentType == 'com.apple.application-bundle' && kMDItemDisplayName == '{name}'cd"]).split("\n")[0]
+            if not path:
+                NO_ICON.add(name)
+                raise HTTPException(404)
+            rep = NSBitmapImageRep.alloc().initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel_(
+                None, 64, 64, 8, 4, True, False, NSDeviceRGBColorSpace, 0, 0)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.setCurrentContext_(NSGraphicsContext.graphicsContextWithBitmapImageRep_(rep))
+            ws.iconForFile_(path).drawInRect_(((0, 0), (64, 64)))
+            NSGraphicsContext.restoreGraphicsState()
+            f.parent.mkdir(exist_ok=True)
+            rep.representationUsingType_properties_(NSBitmapImageFileTypePNG, {}).writeToFile_atomically_(str(f), True)
+    return FileResponse(f)
 
 
 @app.post("/api/items")
@@ -162,7 +198,7 @@ def capture(a: Shot | None = None):
     subprocess.run(["screencapture", "-x", *flags, "-t", "jpg", str(db.FILES / name)], check=True)
     if a.area and not (db.FILES / name).exists():  # Esc during selection
         return {"id": None}
-    return {"id": save_shot(name, app_name, a.meta)}
+    return {"id": save_shot(name, app_name, a.meta or {"source": "hotbar"})}  # only the hotbar captures without meta
 
 
 @app.post("/api/clipboard")
@@ -264,6 +300,14 @@ def reveal(t: Text):
 @app.get("/api/agents")
 def agents():
     return db.agents()
+
+
+@app.get("/api/setup")
+def setup():
+    """Commands that connect agents and install the CLI, with this checkout's path."""
+    root = db.DATA.parent
+    return {"mcp": f'claude mcp add umm -s user -- uv run --project "{root}/backend" "{root}/backend/mcp_server.py"',
+            "cli": f'uv tool install --editable "{root}/cli"'}
 
 
 mimetypes.add_type("audio/mp4", ".m4a")  # the default audio/mp4a-latm is not playable in WebKit
