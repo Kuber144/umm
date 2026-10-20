@@ -20,10 +20,10 @@ export default function Connections({ onOpen }: { onOpen: (a: Agent) => void }) 
   const row = (a: Agent) => (
     <li key={a.session}>
       <button className="conn" onClick={() => onOpen(a)}>
-        <span className="cicon"><AppIcon name={a.agent} />{a.connected && <i className="livedot" title="Connected" />}</span>
+        <span className="cicon"><AppIcon name={a.agent} />{a.connected && <i className="livedot" />}</span>
         <span className="cmain">
           <b>{a.agent}<span>{a.agent_version}</span></b>
-          <span className="cwd" title={a.cwd}><Icon name="path" />{projectName(a.cwd)}</span>
+          <span className="cwd" data-tip={a.cwd}><Icon name="path" />{projectName(a.cwd)}</span>
         </span>
         <span className="cseen">{(a.connected ? 'Active ' : 'Last seen ') + ago(a.last_seen)}</span>
         <span className="cn">{a.memories}<span>{a.memories === 1 ? ' memory' : ' memories'}</span></span>
@@ -42,7 +42,7 @@ export default function Connections({ onOpen }: { onOpen: (a: Agent) => void }) 
       <div className="scroll">
         <div className="sets">
           {list && !list.length && (
-            <div className="empty left">
+            <div className="state left">
               <h2>No agent has connected yet</h2>
               <p>Run this once in a terminal. Claude Code then starts umm's MCP server in every session, and each one shows up here.</p>
             </div>

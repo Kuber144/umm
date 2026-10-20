@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type Profiles, type Settings as Conf, type Storage } from './api'
 import { native, send } from './bridge'
-import { Cmd, Dot, Icon, Kbd, home } from './ui'
+import { Cmd, Dot, Icon, Kbd, Menu, home, type Opt } from './ui'
+import icon from '../../assets/icon.svg'
 import './settings.css'
 
 const LANGS: [string, string][] = [['en', 'English'], ['hi', 'Hindi'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ar', 'Arabic'], ['zh', 'Chinese'], ['ja', 'Japanese'], ['ru', 'Russian']]
@@ -10,18 +11,60 @@ const DAYS: [number, string][] = [[0, 'Forever'], [7, '7 days'], [30, '30 days']
 const KIND_NAMES = { screenshot: 'screenshot', text: 'note', path: 'path', link: 'link', voice: 'recording' }
 const size = (b: number) => (b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} KB` : b < 1e9 ? `${Math.round(b / 1e6)} MB` : `${(b / 1e9).toFixed(1)} GB`)
 
-const Row = ({ label, hint, children, wide }: { label: string; hint?: ReactNode; children: ReactNode; wide?: boolean }) => (
+const Row = ({ label, hint, children, wide }: { label: string; hint?: ReactNode; children?: ReactNode; wide?: boolean }) => (
   <div className={'srow' + (wide ? ' wide' : '')}><div className="lbl"><b>{label}</b>{hint && <span>{hint}</span>}</div><div className="ctl">{children}</div></div>
 )
 const Group = ({ title, children }: { title: string; children: ReactNode }) => <section><h2>{title}</h2><div className="group">{children}</div></section>
 const Switch = ({ on, set, label }: { on: boolean; set: (v: boolean) => void; label: string }) => (
   <button role="switch" aria-checked={on} aria-label={label} className={'switch' + (on ? ' on' : '')} onClick={() => set(!on)}><i /></button>
 )
-const Pick = ({ value, set, label, children, dot }: { value: string | number; set: (v: string) => void; label: string; children: ReactNode; dot?: string }) => (
-  <label className="pick">{dot && <Dot name={dot} />}
-    <select value={value} onChange={e => set(e.target.value)} aria-label={label}>{children}</select><Icon name="caret" />
-  </label>
+const Pick = ({ value, set, label, options }: { value: string; set: (v: string) => void; label: string; options: Opt[] }) => (
+  <Menu label={label} value={value} onPick={set} options={options}><span className="cur">{options.find(o => o.value === value)?.label}</span><Icon name="updown" /></Menu>
 )
+
+// The login item, version and Accessibility state from Swift. Asked again on focus, so a permission granted in System Settings shows up.
+type Mac = { loginItem?: string; version?: string; accessibility?: boolean }
+function useMac() {
+  const [mac, setMac] = useState<Mac>({})
+  useEffect(() => {
+    if (!native) return
+    const ask = () => send({ type: 'settings' })
+    window.ummSettings = setMac; ask()
+    window.addEventListener('focus', ask)
+    return () => { window.ummSettings = undefined; window.removeEventListener('focus', ask) }
+  }, [])
+  return mac
+}
+const Access = ({ on }: { on?: boolean }) => on ? <span className="ok"><Icon name="check" />Allowed</span> : <button className="btn" onClick={() => send({ type: 'accessibility' })}>Allow...</button>
+
+// First run, while nothing is saved yet: the hotkey, permissions and connecting an agent.
+export function Welcome({ onSkip }: { onSkip: () => void }) {
+  const mac = useMac()
+  const [setup, setSetup] = useState<{ mcp: string } | null>(null)
+  useEffect(() => { api.setup().then(setSetup, () => {}) }, [])
+  const asked = <span className="dim">Asked on first use</span>
+  return (
+    <div className="scroll welcome"><div className="sets">
+      <div className="state">
+        <img src={icon} alt="" />
+        <h2>Welcome to umm</h2>
+        <p>Keep what is on your screen, on your clipboard or on your mind, and find it later by searching.</p>
+        <button className="link-btn" onClick={onSkip}>Skip the setup</button>
+      </div>
+      <Group title="1. Save your first memory">
+        <Row label="Press the hotkey in any app" hint="The hotbar opens. Press Enter to save the window in front, with its text."><Kbd>Ctrl Shift Space</Kbd><Kbd>Enter</Kbd></Row>
+      </Group>
+      <Group title="2. Allow access">
+        <Row label="Screen Recording" hint="For screenshots. If one fails, allow umm in System Settings, Privacy & Security.">{asked}</Row>
+        <Row label="Microphone" hint="For voice notes.">{asked}</Row>
+        {mac.accessibility !== undefined && <Row label="Accessibility" hint="Optional. Screenshots remember the page or document they show."><Access on={mac.accessibility} /></Row>}
+      </Group>
+      <Group title="3. Connect an agent">
+        <Row label="Claude Code" hint="Optional. Run this once in a terminal, and agents can save and search memories." wide>{setup && <Cmd text={setup.mcp} copy={api.copy} />}</Row>
+      </Group>
+    </div></div>
+  )
+}
 
 // Moving the data folder: pick a parent, the data goes into <parent>/umm. The backend restarts there,
 // so this polls GET /api/storage until the path changes.
@@ -73,7 +116,7 @@ function Move({ from, done }: { from: string; done: (s: Storage) => void }) {
 export default function Settings({ profiles, onActive }: { profiles: Profiles; onActive: (name: string) => void }) {
   const [s, setS] = useState<Conf | null>(null)
   const [store, setStore] = useState<Storage | null>(null)
-  const [mac, setMac] = useState<{ loginItem?: string; version?: string; accessibility?: boolean }>({})
+  const mac = useMac()
   const [err, setErr] = useState(false)
   const [setup, setSetup] = useState<{ mcp: string; cli: string } | null>(null)
 
@@ -81,12 +124,6 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
     api.settings().then(setS, () => setErr(true))
     api.storage().then(setStore, () => {})
     api.setup().then(setSetup, () => {})
-    if (!native) return
-    // ask again on focus, so a permission granted in System Settings shows up
-    const ask = () => send({ type: 'settings' })
-    window.ummSettings = setMac; ask()
-    window.addEventListener('focus', ask)
-    return () => { window.ummSettings = undefined; window.removeEventListener('focus', ask) }
   }, [])
 
   const patch = (p: Partial<Conf>) => {
@@ -111,9 +148,7 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
       <div className="scroll">{s && <div className="sets">
         <Group title="General">
           <Row label="Hotkey saves go to" hint="The profile new saves land in.">
-            <Pick value={profiles.active} set={onActive} label="Profile for new saves" dot={profiles.active}>
-              {profiles.all.map(p => <option key={p.name}>{p.name}</option>)}
-            </Pick>
+            <Pick value={profiles.active} set={onActive} label="Profile for new saves" options={profiles.all.map(({ name }) => ({ value: name, text: name, label: <><Dot name={name} />{name}</> }))} />
           </Row>
           {native && <Row label="Open at login" hint={mac.loginItem === 'approval' ? 'Allow umm in System Settings, General, Login Items.' : 'umm starts in the menu bar.'}>
             <Switch on={loginOn} set={on => send({ type: 'loginItem', on })} label="Open at login" />
@@ -123,16 +158,14 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
 
         <Group title="Screenshots">
           {s.screenshot_days !== undefined && <Row label="Keep images" hint="After that, the image is removed. Its text stays searchable.">
-            <Pick value={s.screenshot_days} set={v => patch({ screenshot_days: +v })} label="Keep screenshot images">
-              {DAYS.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
-            </Pick>
+            <Pick value={String(s.screenshot_days)} set={v => patch({ screenshot_days: +v })} label="Keep screenshot images" options={DAYS.map(([d, l]) => ({ value: String(d), label: l }))} />
           </Row>}
           {mac.accessibility !== undefined && <Row label="Page addresses" hint={mac.accessibility ? 'Screenshots remember the page or document they show.' : 'Allow Accessibility so screenshots remember the page URL.'}>
-            {mac.accessibility ? <span className="ok"><Icon name="check" />Allowed</span> : <button className="btn" onClick={() => send({ type: 'accessibility' })}>Allow...</button>}
+            <Access on={mac.accessibility} />
           </Row>}
           <Row label="Excluded apps" hint="Never captured while in front, for example a password manager." wide>
             <div className="apps">
-              {s.excluded_apps.map(a => <button key={a} className="tag" title="Remove" onClick={() => patch({ excluded_apps: s.excluded_apps.filter(x => x !== a) })}>{a}<Icon name="x" /></button>)}
+              {s.excluded_apps.map(a => <button key={a} className="tag" data-tip="Remove" onClick={() => patch({ excluded_apps: s.excluded_apps.filter(x => x !== a) })}>{a}<Icon name="x" /></button>)}
               <input placeholder="Add an app, then Enter" aria-label="Add an excluded app" spellCheck={false}
                 onKeyDown={e => { if (e.key === 'Enter') { addApp(e.currentTarget.value); e.currentTarget.value = '' } }} />
             </div>
@@ -167,7 +200,7 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
           <Row label={store ? size(store.bytes) : 'Size'} hint={store && (Object.entries(store.kinds).map(([k, n]) => `${n} ${KIND_NAMES[k as keyof typeof KIND_NAMES] ?? k}${n === 1 ? '' : 's'}`).join(', ') || 'Nothing saved yet')}>
             <button className="btn" disabled={!store} onClick={() => store && api.reveal(store.path + '/umm.db')}>Show in Finder</button>
           </Row>
-          {store && <Row label="Location" hint={<code title={store.path}>{home(store.path)}</code>}>
+          {store && <Row label="Location" hint={<code data-tip={store.path}>{home(store.path)}</code>}>
             <Move from={store.path} done={setStore} />
           </Row>}
         </Group>
