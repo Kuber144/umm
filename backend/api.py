@@ -42,6 +42,11 @@ class App(BaseModel):
     app: str | None = None
 
 
+class Shot(App):
+    display: int | None = None  # 1-based, as in screencapture -D. Omitted means the main display.
+    area: bool = False  # interactive region selection
+
+
 class Profile(BaseModel):
     name: ProfileName
 
@@ -124,11 +129,15 @@ def get_thumb(name: str):
 
 
 @app.post("/api/capture")
-def capture(a: App | None = None):
-    app_name = (a and a.app) or front_window()
+def capture(a: Shot | None = None):
+    a = a or Shot()
+    app_name = a.app or front_window()
     # jpg is ~9x smaller than png and OCR reads the same text. Microseconds keep parallel captures from sharing a file.
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
-    subprocess.run(["screencapture", "-x", "-t", "jpg", str(db.FILES / name)], check=True)
+    flags = ["-i"] if a.area else ["-D", str(a.display)] if a.display else []
+    subprocess.run(["screencapture", "-x", *flags, "-t", "jpg", str(db.FILES / name)], check=True)
+    if a.area and not (db.FILES / name).exists():  # Esc during selection
+        return {"id": None}
     return {"id": save_shot(name, app_name)}
 
 

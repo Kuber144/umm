@@ -61,6 +61,7 @@ export default function Hotbar() {
 
   const menu: (Row & { kw: string })[] = [
     { id: 'shot', icon: 'screenshot', label: 'Take a screenshot', kw: 'capture screen', run: () => send({ type: 'capture' }) },
+    { id: 'area', icon: 'screenshot', label: 'Screenshot an area', kw: 'capture screen region select', run: () => send({ type: 'area' }) },
     ...(clip ? [{ id: 'clip', icon: 'clip' as const, label: 'Save clipboard', kw: 'paste copy',
       detail: <span className="peek">{clip.replace(/\s+/g, ' ').slice(0, 70)}</span>,
       run: () => { api.add(clip, ctx?.app).then(() => send({ type: 'saved' }), fail) } }] : []),

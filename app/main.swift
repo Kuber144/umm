@@ -10,7 +10,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     let scheme = Scheme()
     let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
-    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", signals: [DispatchSourceSignal] = []
+    var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastDisplay: Int?, signals: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ n: Notification) {
         backend.start()
@@ -121,6 +121,11 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     func showHotbar(_ ctx: String) {
         lastApp = ((try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any])?["app"] as? String ?? ""
         let s = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main!
+        // screencapture -D takes the 1-based position in the active display list
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16), n: UInt32 = 0
+        CGGetActiveDisplayList(16, &ids, &n)
+        lastDisplay = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+            .flatMap { ids.prefix(Int(n)).firstIndex(of: $0) }.map { $0 + 1 }
         let f = s.visibleFrame, h = hotbar.frame.height
         hotbar.setFrame(NSRect(x: f.midX - 340, y: f.maxY - f.height * 0.2 - h, width: 680, height: h), display: false)
         NSApp.activate(ignoringOtherApps: true)
@@ -186,9 +191,9 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         case "hide": hideHotbar()
         case "saved": hideHotbar(); play("Pop")
         case "error": play("Basso")
-        case "capture":
+        case "capture", "area":
             hideHotbar()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.capture() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.capture(area: t == "area") }
         case "openMain": hideHotbar(restore: false); showMain(d["query"] as? String)
         case "recording": status.button?.image = (d["on"] as? Bool) == true ? red : icon
         case "resize":
@@ -205,11 +210,15 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
 
     func play(_ name: String) { NSSound(named: name)?.play() }
 
-    func capture() {
-        let body = (try? JSONSerialization.data(withJSONObject: ["app": lastApp])) ?? Data()
+    func capture(area: Bool) {
+        var b: [String: Any] = ["app": lastApp, "area": area]
+        if let d = lastDisplay { b["display"] = d }
+        let body = (try? JSONSerialization.data(withJSONObject: b)) ?? Data()
         DispatchQueue.global().async {
             let r = backend.request("POST", "/api/capture", headers: ["Content-Type": "application/json"], body: body)
-            DispatchQueue.main.async { self.play(r?.0 == 200 ? "Pop" : "Basso") }
+            // 200 with a null id means the selection was cancelled with Esc: no sound
+            let saved = r.flatMap { (try? JSONSerialization.jsonObject(with: $0.2)) as? [String: Any] }?["id"] is Int
+            DispatchQueue.main.async { if r?.0 != 200 { self.play("Basso") } else if saved { self.play("Pop") } }
         }
     }
 

@@ -1,7 +1,7 @@
 import { api, type Ctx } from './api'
 
 type Msg =
-  | { type: 'hide' | 'saved' | 'error' | 'capture' | 'quit' }
+  | { type: 'hide' | 'saved' | 'error' | 'capture' | 'area' | 'quit' }
   | { type: 'openMain'; query?: string }
   | { type: 'recording'; on: boolean }
   | { type: 'resize'; height: number }
@@ -25,7 +25,7 @@ window.ummOpen = o => { pending.open = o }
 
 export function send(m: Msg) {
   if (handler) return handler.postMessage(m)
-  if (m.type === 'capture') api.capture().catch(() => {})
+  if (m.type === 'capture' || m.type === 'area') api.capture(undefined, m.type === 'area').catch(() => {})
   else if (m.type === 'openExternal') window.open(m.url, '_blank', 'noopener')
   else if (m.type === 'openMain') {
     location.hash = ''

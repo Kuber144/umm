@@ -58,7 +58,9 @@ GET    /api/apps?profile=                                -> [{app, count}]   app
 POST   /api/items      {content, app?, profile?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?}                            -> {id}     screenshot + OCR + thumbnail, takes ~1s
+POST   /api/capture    {app?, display?, area?}           -> {id}     screenshot + OCR + thumbnail, takes ~1s
+                                                                    display: 1-based number for screencapture -D, default main display
+                                                                    area: true runs the interactive selection. Esc returns {id: null} and saves nothing
 GET    /api/context                                      -> {app, profile, clipboard, recording}
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
@@ -83,8 +85,9 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "hide"}                     close the hotbar, focus returns to the previous app
 {type: "saved"}                    close the hotbar and play the "saved" sound (UI already did the fetch)
 {type: "error"}                    play the error sound
-{type: "capture"}                  close the hotbar, wait 250ms, POST /api/capture with the app from context, play sound
-                                   fallback: fetch POST /api/capture
+{type: "capture"}                  close the hotbar, wait 250ms, POST /api/capture with the app from context and the
+                                   display under the mouse, play sound. fallback: fetch POST /api/capture
+{type: "area"}                     same, with area: true. No sound when the selection is cancelled
 {type: "openMain", query?}         close the hotbar, show the main window, then call window.ummOpen?.({query})
                                    fallback: location.hash = ""
 {type: "recording", on}            update the status bar item (red while recording)
@@ -107,13 +110,14 @@ window.ummOpen?.({query})   main window shown, optional search query
 Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot (top row), so `Ctrl+Shift+Space` then `Enter` is the fast path, also with Ctrl and Shift still held. Rows:
 
 1. Screenshot
-2. Save clipboard (shows a preview, hidden when the clipboard is empty)
-3. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
-4. Start recording / Stop recording (shows elapsed time while on)
-5. Search memories: typing filters the rows and shows matching memories below them. `Enter` on a memory copies it (path, link or text) and closes
-6. Switch profile
-7. Open umm (main window)
-8. Quit umm
+2. Screenshot an area
+3. Save clipboard (shows a preview, hidden when the clipboard is empty)
+4. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
+5. Start recording / Stop recording (shows elapsed time while on)
+6. Search memories: typing filters the rows and shows matching memories below them. `Enter` on a memory copies it (path, link or text) and closes
+7. Switch profile
+8. Open umm (main window)
+9. Quit umm
 
 ## Rules for every agent
 
