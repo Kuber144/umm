@@ -62,6 +62,7 @@ export default function Library() {
   const [origins, setOrigins] = useState<Origin[]>([])
   const [live, setLive] = useState(0)
   const [items, setItems] = useState<Item[]>([])
+  const [hq, setHq] = useState('')  // the query the shown items were found with, so rows only re-render when results arrive
   const [more, setMore] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -98,7 +99,7 @@ export default function Library() {
     const lim = Math.min(200, limit)  // the API caps a page at 200
     return page(0, lim).then(r => {
       if (n !== seq.current) return
-      setItems(r); setMore(r.length >= lim); setLoaded(true); setFailed(false)
+      setItems(r); setHq(q); setMore(r.length >= lim); setLoaded(true); setFailed(false)
       if (first) { setSel(r.length ? 0 : -1); setPicked([]); anchor.current = 0 }
     }, () => { setLoaded(true); setFailed(true) })
   }
@@ -375,7 +376,7 @@ export default function Library() {
         </div>
         <p className="keys"><Kbd>Esc</Kbd> clears the selection</p>
       </section>
-    ) : chosen[0] ? <Preview key={chosen[0].id} it={chosen[0]} q={q} act={act} profiles={toProfile(names)} />
+    ) : chosen[0] ? <Preview key={chosen[0].id} it={chosen[0]} q={hq} act={act} profiles={toProfile(names)} />
     : (
       <section className="pane state">
         {loaded && !list.length && !filtered ? <>
@@ -508,7 +509,7 @@ export default function Library() {
                 <ul ref={listRef} className="list" role="listbox" tabIndex={0} aria-label="Memories" aria-multiselectable
                   aria-activedescendant={list[sel] ? 'm' + list[sel].id : undefined} onFocus={e => e.target === e.currentTarget && sel < 0 && pickAt(0)}>
                   {list.map((it, i) => (
-                    <Row key={it.id} it={it} i={i} q={q} cur={i === sel} on={!composing && (picked.length > 1 ? picked.includes(it.id) : i === sel)}
+                    <Row key={it.id} it={it} i={i} q={hq} cur={i === sel} on={!composing && (picked.length > 1 ? picked.includes(it.id) : i === sel)}
                       all={scope === '*'} onPick={onPick} onOpen={onOpen} />
                   ))}
                 </ul>
