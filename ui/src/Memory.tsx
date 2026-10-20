@@ -30,7 +30,7 @@ function snip(text: string, q: string, n = 150) {
   const f = flat(text.slice(0, 20000))
   const w = q.split(/\s+/).find(Boolean)
   const at = w ? f.toLowerCase().indexOf(w.toLowerCase()) : -1
-  const from = Math.max(0, at - 30)
+  const from = Math.max(0, at - 16)
   return (from ? '... ' : '') + cut(f.slice(from), n)
 }
 // Cut to n characters without splitting an emoji or other surrogate pair.
@@ -72,6 +72,7 @@ const QuietUrl = ({ url, q = '' }: { url: string; q?: string }) =>
 function lines(it: Item, q: string): [ReactNode, ReactNode] {
   const m = it.meta
   const said = (s: string) => hl(cut(flat(s), 160), q)
+  const near = (s: string) => hl(snip(s, q), q)  // second lines show the part around a match
   if (m?.source === 'mcp' && it.kind === 'text') return [said(it.content), <><b>{m.agent}</b>{m.cwd && <><Icon name="path" />{projectName(m.cwd)}</>}</>]
   const url = m?.url ? <QuietUrl url={m.url} q={q} /> : null
   if (it.kind === 'screenshot') {
@@ -92,9 +93,9 @@ function lines(it: Item, q: string): [ReactNode, ReactNode] {
   const [head, ...rest] = it.content.trim().split('\n')
   if (it.kind === 'voice') {
     const [orig, english] = voiceParts(it.content)
-    return [said(orig), <><Icon name="voice" />{english ? said(english) : 'Voice note'}</>]
+    return [said(orig), <><Icon name="voice" />{english ? near(english) : 'Voice note'}</>]
   }
-  return [said(head), <>{url}{rest.join(' ').trim() ? said(rest.join(' ')) : appName(it.app) || SOURCES[m?.source ?? '']?.[1] || 'Note'}</>]
+  return [said(head), <>{url}{rest.join(' ').trim() ? near(rest.join(' ')) : appName(it.app) || SOURCES[m?.source ?? '']?.[1] || 'Note'}</>]
 }
 
 // Rows only re-render when their own props change, so onPick must be stable.
