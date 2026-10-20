@@ -1,3 +1,5 @@
+.bar > .in { animation: show .12s ease-out; }
+@keyframes show { from { opacity: 0; transform: translateY(-4px); } }
 .bar { overflow: hidden; border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line-2); }
 .ask { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 20px; color: var(--ink-3); border-bottom: 1px solid var(--line); }
 .ask .logo { width: 30px; height: 30px; margin: -3px -2px -3px -3px; flex: none; }
@@ -12,12 +14,17 @@
 .tile .ic { width: 15px; height: 15px; }
 .tile .dot { margin: 0; }
 li.on { background: var(--teal-tint); }
+.rows li:active, .mems li:active { transform: scale(.99); }
+.secret { transition: filter var(--quick); }
+.rows li:not(.on) .secret, .mems li:not(.on) .secret { filter: blur(5px); }
 li.on .tile { background: var(--teal); color: var(--on-teal); box-shadow: inset 0 0 0 1.5px var(--edge); }
 .label { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .peek { font-size: 12.5px; color: var(--ink-3); display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
 .live { display: inline-flex; align-items: center; gap: 8px; color: var(--blush-ink); font: 600 13px var(--font); font-variant-numeric: tabular-nums; }
 .none { color: var(--ink-3); font-size: 13px; padding-left: 8px; }
 .note textarea { display: block; width: 100%; border: 0; background: none; resize: none; padding: 18px 20px 4px; font-size: 15px; line-height: 1.55; min-height: 140px; max-height: 340px; }
+.note .nhead { margin: 0; padding: 14px 20px 0; font-size: 12px; color: var(--ink-3); }
+.nhead + textarea { padding-top: 6px; }
 .note .nfrom { margin: 0; padding: 4px 20px 14px; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 footer { display: flex; justify-content: space-between; align-items: center; height: 36px; padding: 0 20px; background: var(--sunk); border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
 footer .fprof { display: inline-flex; align-items: center; color: var(--ink-2); font-weight: 500; }

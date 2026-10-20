@@ -145,6 +145,7 @@ time { flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: t
 .ocr[open] summary .ic { transform: rotate(90deg); }
 .ocr p { margin: 6px 0 0; max-width: 72ch; color: var(--ink-2); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .prose { margin: 0 0 16px; max-width: 64ch; font-size: 15px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prose.note { padding-left: 12px; border-left: 2px solid var(--teal); }  /* .note alone is the hotbar editor */
 .trans { max-width: 64ch; }
 .trans h3 { margin: 0 0 2px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
 .trans p { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 22px; white-space: pre-wrap; }

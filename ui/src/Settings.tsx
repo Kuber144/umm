@@ -150,6 +150,9 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
           <Row label="Hotkey saves go to" hint="The profile new saves land in.">
             <Pick value={profiles.active} set={onActive} label="Profile for new saves" options={profiles.all.map(({ name }) => ({ value: name, text: name, label: <><Dot name={name} />{name}</> }))} />
           </Row>
+          <Row label="Clipboard history" hint="Recent copied text the hotbar can save. Kept in memory only, never on disk.">
+            <Pick value={String(s.clipboard_history)} set={v => patch({ clipboard_history: +v })} label="Clipboard history" options={[[0, 'Off'], [10, '10'], [25, '25'], [50, '50']].map(([d, l]) => ({ value: String(d), label: String(l) }))} />
+          </Row>
           {native && <Row label="Open at login" hint={mac.loginItem === 'approval' ? 'Allow umm in System Settings, General, Login Items.' : 'umm starts in the menu bar.'}>
             <Switch on={loginOn} set={on => send({ type: 'loginItem', on })} label="Open at login" />
           </Row>}

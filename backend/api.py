@@ -15,7 +15,7 @@ from typing import Annotated
 import objc
 from AppKit import (NSBitmapImageFileTypeJPEG, NSBitmapImageFileTypePNG, NSBitmapImageRep, NSDeviceRGBColorSpace, NSGraphicsContext,
                     NSImageCompressionFactor, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeTIFF,
-                    NSPasteboardURLReadingFileURLsOnlyKey, NSWorkspace)
+                    NSPasteboardTypeString, NSPasteboardURLReadingFileURLsOnlyKey, NSWorkspace)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -80,11 +80,13 @@ class Item(BaseModel):
     app: str | None = None
     meta: dict | None = None
     profile: ProfileName | None = None
+    note: Content | None = None
 
 
 class Edit(BaseModel):
     content: Content | None = None
     profile: ProfileName | None = None
+    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=db.MAX_CONTENT)] | None = None  # "" clears
 
 
 class Text(BaseModel):
@@ -94,6 +96,7 @@ class Text(BaseModel):
 class App(BaseModel):
     app: str | None = None
     meta: dict | None = None
+    note: Content | None = None
 
 
 class Shot(App):
@@ -191,12 +194,12 @@ def icon(app: str):
 
 @app.post("/api/items")
 def add(item: Item):
-    return {"id": db.add(item.content, app=item.app, profile=item.profile, meta=item.meta)}
+    return {"id": db.add(item.content, app=item.app, profile=item.profile, meta=item.meta, note=item.note)}
 
 
 @app.patch("/api/items/{id}")
 def edit(id: int, e: Edit):
-    db.update(id, e.content, e.profile)
+    db.update(id, e.content, e.profile, e.note)
     return {}
 
 
@@ -217,7 +220,8 @@ def clipboard():
             return "files", [str(u.path()) for u in urls]
         if {NSPasteboardTypePNG, NSPasteboardTypeTIFF} & set(pb.types() or []):
             return "image", None
-    text = run("pbpaste")
+        text = pb.stringForType_(NSPasteboardTypeString)  # in process, pbpaste would fork on every hotbar open and clipboard change
+    text = str(text) if text is not None else run("pbpaste")  # pbpaste still converts rich text only copies
     return ("text", text) if text.strip() else (None, "")
 
 
@@ -225,10 +229,35 @@ def clipboard():
 def context(url: str | None = None):  # url is the page or document Swift read over Accessibility
     kind, value = clipboard()
     return {"app": front_window(), "profile": db.active_profile(), "clipboard_kind": kind,
-            "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status(), "url": url}
+            "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status(), "url": url, "history": len(history)}
 
 
-def save_shot(name, app_name, meta=None, profile=None):
+history = []  # [{text, at}] newest first, in memory only. Text copies the backend saw, for the hotbar picker
+
+
+def watch_clipboard():
+    count = None
+    while True:
+        time.sleep(1)
+        n = settings.get()["clipboard_history"]
+        with objc.autorelease_pool():
+            changed, count = count != (c := NSPasteboard.generalPasteboard().changeCount()), c
+        if not n:
+            history.clear()
+        elif changed and (r := clipboard())[0] == "text":
+            text = r[1][:db.MAX_CONTENT]
+            history[:] = [{"text": text, "at": datetime.now().isoformat(timespec="seconds")}, *(h for h in history if h["text"] != text)][:n]
+
+
+threading.Thread(target=watch_clipboard, daemon=True).start()
+
+
+@app.get("/api/clipboard/history")
+def clipboard_history():
+    return history
+
+
+def save_shot(name, app_name, meta=None, profile=None, note=None):
     """OCR and thumbnail the screenshot already written to FILES/name, then save it."""
     # the same image saved in the last 10 minutes returns that item, so a repeated capture adds nothing
     for id, _, f in db.recent(profile or db.active_profile(), "screenshot", 600):
@@ -239,7 +268,7 @@ def save_shot(name, app_name, meta=None, profile=None):
     with objc.autorelease_pool():
         text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
     thumb(name)
-    return db.add(text, "screenshot", name, app_name, profile, meta)
+    return db.add(text, "screenshot", name, app_name, profile, meta, note)
 
 
 def thumb(name):
@@ -274,7 +303,7 @@ def capture(a: Shot | None = None):
                                  "allow it in System Settings, Privacy and Security, Screen Recording")
     if a.area and not (db.FILES / name).exists():  # Esc during selection
         return {"id": None}
-    return {"id": save_shot(name, app_name, a.meta or {"source": "hotbar"}, a.profile)}  # only the hotbar captures without meta
+    return {"id": save_shot(name, app_name, a.meta or {"source": "hotbar"}, a.profile, a.note)}  # only the hotbar captures without meta
 
 
 @app.post("/api/clipboard")
@@ -423,7 +452,7 @@ def record_status():
 @app.post("/api/record/start")
 def record_start(a: App | None = None):
     app_name = (a and a.app) or front_window()
-    record.start("" if app_name.split(":")[0].lower() == "umm" else app_name, a and a.meta)  # started from the main window
+    record.start("" if app_name.split(":")[0].lower() == "umm" else app_name, a and a.meta, a and a.note)  # started from the main window
     return record.status()
 
 

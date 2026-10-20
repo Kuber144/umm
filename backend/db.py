@@ -60,10 +60,10 @@ db = sqlite3.connect(DATA / "umm.db", check_same_thread=False)
 db.row_factory = sqlite3.Row
 db.execute("PRAGMA journal_mode=WAL")  # MCP servers write from other processes
 db.execute("PRAGMA busy_timeout=5000")
-SCHEMA = "profile UNINDEXED, kind UNINDEXED, content, file UNINDEXED, app, meta UNINDEXED, created_at UNINDEXED, vec UNINDEXED"
-if db.execute("SELECT 1 FROM pragma_table_info('items') WHERE name = 'vec'").fetchone() is None:
+SCHEMA = "profile UNINDEXED, kind UNINDEXED, content, file UNINDEXED, app, meta UNINDEXED, created_at UNINDEXED, vec UNINDEXED, note"
+if db.execute("SELECT 1 FROM pragma_table_info('items') WHERE name = 'note'").fetchone() is None:
     old = [c for (c,) in db.execute("SELECT name FROM pragma_table_info('items')")]
-    if old:  # table from before vec (and maybe before meta), copy what it has
+    if old:  # table from before note (and maybe before vec or meta), copy what it has
         db.backup(sqlite3.connect(DATA / "umm.db.bak"))
         cols = ", ".join(old)
         db.execute("BEGIN")
@@ -74,7 +74,7 @@ if db.execute("SELECT 1 FROM pragma_table_info('items') WHERE name = 'vec'").fet
         db.commit()
     else:
         db.execute(f"CREATE VIRTUAL TABLE items USING fts5({SCHEMA})")
-COLS = "rowid AS id, profile, kind, content, file, app, meta, created_at"
+COLS = "rowid AS id, profile, kind, content, file, app, meta, created_at, note"
 MOVED = 1  # PRAGMA user_version of a database the data folder moved away from
 
 
@@ -140,13 +140,13 @@ def detect(content):
 
 
 @locked
-def add(content, kind=None, file=None, app=None, profile=None, meta=None):
+def add(content, kind=None, file=None, app=None, profile=None, meta=None, note=None):
     profile, kind = profile or active_profile(), kind or detect(content)
     if not file and (same := [id for id, c, _ in recent(profile, kind, 10) if c == content]):  # a double Enter saves once
         return same[0]
-    cur = db.execute("INSERT INTO items(profile, kind, content, file, app, meta, created_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
-                     (profile, kind, content, file, app, json.dumps(meta) if meta else None))
+    cur = db.execute("INSERT INTO items(profile, kind, content, file, app, meta, created_at, note) "
+                     "VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)",
+                     (profile, kind, content, file, app, json.dumps(meta) if meta else None, note or None))
     commit()
     if cur.lastrowid and kind == "link":
         enrich_later(cur.lastrowid, content)
@@ -195,12 +195,14 @@ def backfill(delay=1):
 
 
 @locked
-def update(id, content=None, profile=None):
+def update(id, content=None, profile=None, note=None):
     if content is not None:  # a new text drops what was fetched for the old link
         db.execute("UPDATE items SET content = ?, kind = ?, vec = NULL, meta = json_remove(meta, '$.link', '$.icon', '$.tried') "
                    "WHERE rowid = ? AND kind NOT IN ('screenshot', 'voice')", (content, detect(content), id))
         db.execute("UPDATE items SET content = ?, vec = NULL, meta = json_remove(meta, '$.transcribing') "
                    "WHERE rowid = ? AND kind IN ('screenshot', 'voice')", (content, id))
+    if note is not None:  # "" clears it
+        db.execute("UPDATE items SET note = ?, vec = NULL WHERE rowid = ?", (note or None, id))
     if profile:
         db.execute("UPDATE items SET profile = ? WHERE rowid = ?", (profile, id))
     commit()
@@ -217,12 +219,12 @@ def embed_pending():
     with embedding:
         while True:
             with lock:
-                rows = db.execute("SELECT rowid, content FROM items WHERE vec IS NULL AND content != '' LIMIT 4").fetchall()  # a voice note being transcribed waits
-            vecs = rows and embed.embed([c for _, c in rows])  # outside the lock, the model is slow
+                rows = db.execute("SELECT rowid, content, note FROM items WHERE vec IS NULL AND content != '' LIMIT 4").fetchall()  # a voice note being transcribed waits
+            vecs = rows and embed.embed([f"{n}\n{c}" if n else c for _, c, n in rows])  # outside the lock, the model is slow
             if not vecs:  # nothing left, or no model and the items stay keyword only
                 return
             with lock:
-                for (id, c), v in zip(rows, vecs):
+                for (id, c, _), v in zip(rows, vecs):
                     db.execute("UPDATE items SET vec = ? WHERE rowid = ? AND content = ?", (v, id, c))  # skips an item edited meanwhile
                 commit()
 

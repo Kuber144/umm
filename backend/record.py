@@ -13,7 +13,7 @@ import db
 import settings
 
 lock = threading.Lock()
-state = {"stream": None, "queue": None, "writer": None, "name": None, "start": 0, "app": None, "meta": None, "profile": None, "transcribing": 0}
+state = {"stream": None, "queue": None, "writer": None, "name": None, "start": 0, "app": None, "meta": None, "note": None, "profile": None, "transcribing": 0}
 
 
 def writer(f, q):
@@ -23,7 +23,7 @@ def writer(f, q):
     f.close()
 
 
-def start(app=None, meta=None):
+def start(app=None, meta=None, note=None):
     with lock:
         if state["stream"]:
             return
@@ -40,7 +40,7 @@ def start(app=None, meta=None):
             (db.FILES / name).unlink()
             raise
         w.start()
-        state.update(stream=stream, queue=q, writer=w, name=name, start=time.time(), app=app, meta=meta, profile=db.active_profile())
+        state.update(stream=stream, queue=q, writer=w, name=name, start=time.time(), app=app, meta=meta, note=note, profile=db.active_profile())
 
 
 def stop():
@@ -52,19 +52,19 @@ def stop():
         state["queue"].put(None)
         state["writer"].join()
         try:  # on stays true until the item exists, so a poll that sees it off finds the item
-            args = save(state["name"], state["app"], state["profile"], state["meta"])
+            args = save(state["name"], state["app"], state["profile"], state["meta"], state["note"])
             state["transcribing"] += 1
         finally:
             state.update(stream=None)
     threading.Thread(target=transcribe, args=args, daemon=True).start()
 
 
-def save(name, app, profile, meta=None):
+def save(name, app, profile, meta=None, note=None):
     """Adds the voice item at once, playable, with empty content and meta.transcribing. Returns (id, file)."""
     # WebKit can't play FLAC, AAC plays everywhere and is ~3x smaller. Whisper reads the m4a, so the file name never changes
     m4a = name.replace(".flac", ".m4a")
     ok = subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "32000", str(db.FILES / name), str(db.FILES / m4a)]).returncode == 0
-    id = db.add("", "voice", m4a if ok else name, app, profile, {**(meta or {}), "transcribing": True})
+    id = db.add("", "voice", m4a if ok else name, app, profile, {**(meta or {}), "transcribing": True}, note)
     if ok:
         (db.FILES / name).unlink()
     return id, m4a if ok else name

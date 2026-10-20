@@ -9,6 +9,7 @@ export type Act = {
   del: (its: Item[]) => void
   move: (its: Item[], profile: string) => void
   save: (it: Item, content: string) => Promise<void>
+  note: (it: Item, note: string) => Promise<void>
   zoom: (it: Item) => void
   shot: (it: Item, what: 'copy' | 'open' | 'reveal') => void
 }
@@ -80,6 +81,7 @@ function lines(it: Item, q: string): [ReactNode, ReactNode] {
     const t = winTitle(it.app) || appName(it.app) || 'Screenshot'
     // OCR often starts with the window title, which the row already shows
     const text = it.content.trim().startsWith(t) ? it.content.trim().slice(t.length) : it.content
+    if (it.note) return [said(it.note.split('\n')[0]), <>{url}{hl(t, q)}</>]
     return [hl(t, q), <>{url}{text.trim() ? hl(snip(text, q), q) : 'No text found'}</>]
   }
   if (it.kind === 'link') {
@@ -93,9 +95,11 @@ function lines(it: Item, q: string): [ReactNode, ReactNode] {
   }
   const [head, ...rest] = it.content.trim().split('\n')
   if (it.kind === 'voice') {
-    if (m?.transcribing) return [<span className="busy">Transcribing...</span>, <><Icon name="voice" />Voice note</>]
+    const note = it.note && said(it.note.split('\n')[0])
+    if (m?.transcribing) return [note || <span className="busy">Transcribing...</span>, <><Icon name="voice" />Voice note</>]
     const [orig, english] = voiceParts(it.content)
-    return [said(orig), <><Icon name="voice" />{english ? near(english) : 'Voice note'}</>]
+    const rest = note ? it.content : english
+    return [note || said(orig), <><Icon name="voice" />{rest ? near(rest) : 'Voice note'}</>]
   }
   return [said(head), <>{url}{rest.join(' ').trim() ? near(rest.join(' ')) : appName(it.app) || SOURCES[m?.source ?? '']?.[1] || 'Note'}</>]
 }
@@ -152,7 +156,9 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
   const mcp = m?.source === 'mcp'
   const shot = it.kind === 'screenshot'
   const src = m?.source && SOURCES[m.source]
-  const done = () => (ta.current!.value.trim() !== it.content ? act.save(it, ta.current!.value) : Promise.resolve()).then(() => setEditing(false), () => {})
+  const noted = shot || it.kind === 'voice'  // these edit the note, the content is OCR text or a transcript
+  const base = noted ? it.note ?? '' : it.content
+  const done = () => (ta.current!.value.trim() !== base ? (noted ? act.note : act.save)(it, ta.current!.value) : Promise.resolve()).then(() => setEditing(false), () => {})
   const lp = it.kind === 'link' ? linkParts(it) : null
   const [said, english] = voiceParts(it.content)
   const slash = it.content.replace(/\/$/, '').lastIndexOf('/')
@@ -163,7 +169,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     shot && it.file && ['reveal', 'Open in Preview', 'Cmd O', () => act.shot(it, 'open')],
     lp && ['reveal', 'Open link', 'Cmd O', () => send({ type: 'openExternal', url: lp.url })],
     (it.file && shot || it.kind === 'path') && ['path', 'Show in Finder', 'Cmd Shift R', () => (shot ? act.shot(it, 'reveal') : act.reveal(it))],
-    !shot && !m?.transcribing && ['edit', 'Edit', 'Cmd E', () => setEditing(true)],
+    ['edit', noted ? (it.note ? 'Edit note' : 'Add note') : 'Edit', 'Cmd E', () => setEditing(true)],
   ] as Maybe<Tool>[]).filter(Boolean) as Tool[]
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -176,10 +182,11 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     return () => window.removeEventListener('keydown', k)
   })
 
+  const notePara = it.note && <p className="prose note">{hl(it.note, q)}</p>
   const body = editing ? (
     <div className="edit">
-      <textarea ref={ta} autoFocus defaultValue={it.content} rows={Math.min(14, it.content.split('\n').length + 2)}
-        onFocus={e => e.currentTarget.setSelectionRange(it.content.length, it.content.length)}
+      <textarea ref={ta} autoFocus defaultValue={base} rows={Math.min(14, base.split('\n').length + 2)}
+        onFocus={e => e.currentTarget.setSelectionRange(base.length, base.length)}
         onKeyDown={e => {
           if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
           if (e.key === 'Enter' && e.metaKey) done()
@@ -187,6 +194,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
       <div className="btns"><button className="btn" onClick={() => setEditing(false)}>Cancel</button><button className="btn primary" onClick={done}>Save <Kbd>Cmd Enter</Kbd></button></div>
     </div>
   ) : shot ? <>
+    {notePara}
     {it.file
       ? <button className="hero" onClick={() => act.zoom(it)} data-tip="Zoom" data-keys="Space" aria-label="Zoom screenshot"><img src={fileUrl(it.file)} alt="" /></button>
       : <p className="gone"><Icon name="screenshot" />The image was removed after the time set in Settings. Its text is kept.</p>}
@@ -205,6 +213,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
   </> : it.kind === 'path' ? (
     <div className="file"><span className="kind"><Icon name="path" /></span><div><h2>{hl(it.content.slice(slash + 1) || it.content, q)}</h2><code>{hl(home(it.content.slice(0, slash + 1)), q)}</code></div></div>
   ) : it.kind === 'voice' ? <>
+    {notePara}
     {it.file && <Player file={it.file} />}
     {m?.transcribing ? <p className="busy">Transcribing...</p> : <p className="prose">{hl(said, q)}</p>}
     {english && <div className="trans"><h3>English translation</h3><p>{hl(english, q)}</p></div>}

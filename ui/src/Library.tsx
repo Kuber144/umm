@@ -127,6 +127,9 @@ export default function Library() {
   }
   const remove = (its: Item[]) => {
     if (!its.length) return
+    const one = its.length === 1
+    const files = its.some(x => x.file) ? (one ? ' Its file is deleted too.' : ' Their files are deleted too.') : ''
+    if (!confirm((one ? `Delete this ${KINDS.find(k => k[0] === its[0].kind)![2]}?` : `Delete ${its.length} memories?`) + files)) return
     flush()
     const ids = new Set(its.map(x => x.id))
     setItems(l => l.filter(x => !ids.has(x.id)))
@@ -156,6 +159,7 @@ export default function Library() {
       say(`Moved ${its.length > 1 ? its.length + ' memories ' : ''}to ${p}`); setPicked([]); refresh(items.length); refreshProfiles()
     }, () => say('Could not move')),
     save: (it, content) => api.edit(it.id, { content }).then(() => { refresh(items.length) }, e => { say('Could not save'); throw e }),
+    note: (it, note) => api.edit(it.id, { note }).then(() => { refresh(items.length) }, e => { say('Could not save'); throw e }),
     zoom: it => setZoom(it.id),
     shot: (it, what) => (what === 'copy' ? api.copyImage(it.id) : api.open(it.id, what === 'reveal'))
       .then(() => what === 'copy' && say('Image copied'), () => say(what === 'copy' ? 'Could not copy the image' : 'Could not open the screenshot')),

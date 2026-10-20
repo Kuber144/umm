@@ -143,7 +143,7 @@ def search_memory(
     here: Annotated[bool, Field(description="Shortcut for project = the folder this server runs in, which is the agent's working folder.")] = False,
 ) -> list[dict]:
     """Search the user's saved memory: screenshot OCR text, notes, folder paths, links, voice transcripts.
-    Returns {id, profile, kind, content, file, app, meta, created_at}, newest or best match first.
+    Returns {id, profile, kind, content, file, app, meta, created_at, note}, newest or best match first.
     Long content is cut to 500 characters and marked `truncated: true`; call get_memory(id) for the rest.
     A truncated keyword hit also has `snippet`, the text around the match.
     `file` is an absolute path to the screenshot image or voice recording, or null.

@@ -18,6 +18,7 @@
 - MCP server with `search_memory`, `remember`, `list_profiles`.
 - Start and stop scripts, app icon, menu bar icon.
 - CLI, link enrichment, open at login, and an optional local signing certificate so permissions survive rebuilds.
+- Notes on screenshots and recordings, clipboard history in the hotbar, delete confirmation, and sound and on screen feedback for every hotbar action.
 
 ## Next
 

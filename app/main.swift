@@ -31,6 +31,32 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
     let hotbar = Panel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 400), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     var hotbarView: WKWebView!, main: NSWindow?, mainView: WKWebView?, pendingOpen: String?
     var status: NSStatusItem!, icon: NSImage!, red: NSImage!, lastApp = "", lastURL: String?, lastDisplay: Int?, signals: [DispatchSourceSignal] = [], woken = Set<pid_t>()
+    var stopItem: NSMenuItem!, recTimer: Timer?, hudTick = 0, top: CGFloat = 0
+    var sounds: [String: NSSound] = [:]
+    lazy var hudLabel: NSTextField = {
+        let l = NSTextField(labelWithString: "")
+        l.font = .systemFont(ofSize: 13, weight: .medium)
+        l.textColor = .white
+        return l
+    }()
+    // a small message that never takes focus: the hotbar closes on every action, so this is the only sign that it worked
+    lazy var hudPanel: NSPanel = {
+        let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.state = .active
+        v.wantsLayer = true
+        v.layer?.cornerRadius = 10
+        v.addSubview(hudLabel)
+        p.contentView = v
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.level = .statusBar
+        p.ignoresMouseEvents = true
+        p.isReleasedWhenClosed = false
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        return p
+    }()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         backend.start()
@@ -47,7 +73,12 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             return true
         }
         status.button?.image = icon
+        status.button?.imagePosition = .imageLeading
+        status.button?.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         let m = NSMenu()
+        stopItem = m.addItem(withTitle: "Stop recording", action: #selector(stopRecording), keyEquivalent: "")
+        stopItem.target = self
+        stopItem.isHidden = true
         m.addItem(withTitle: "Open umm", action: #selector(openMain), keyEquivalent: "").target = self
         m.addItem(withTitle: "Quit umm", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         status.menu = m
@@ -171,16 +202,20 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         let c = (try? JSONSerialization.jsonObject(with: Data(ctx.utf8))) as? [String: Any]
         lastApp = c?["app"] as? String ?? ""
         lastURL = c?["url"] as? String
-        let s = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main!
+        let s = mouseScreen
         // screencapture -D takes the 1-based position in the active display list
         var ids = [CGDirectDisplayID](repeating: 0, count: 16), n: UInt32 = 0
         CGGetActiveDisplayList(16, &ids, &n)
         lastDisplay = (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
             .flatMap { ids.prefix(Int(n)).firstIndex(of: $0) }.map { $0 + 1 }
         let f = s.visibleFrame, h = hotbar.frame.height
-        hotbar.setFrame(NSRect(x: f.midX - 340, y: f.maxY - f.height * 0.2 - h, width: 680, height: h), display: false)
+        top = f.maxY - f.height * 0.2
+        let end = NSRect(x: f.midX - 340, y: top - h, width: 680, height: h), still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        hotbar.setFrame(still ? end : end.offsetBy(dx: 0, dy: -6), display: false)
+        hotbar.alphaValue = still ? 1 : 0
         if main == nil { NSApp.activate(ignoringOtherApps: true) } // activating would raise the main window over the user's app
         hotbar.makeKeyAndOrderFront(nil)
+        if !still { NSAnimationContext.runAnimationGroup { $0.duration = 0.12; hotbar.animator().alphaValue = 1; hotbar.animator().setFrame(end, display: true) } }
         hotbar.makeFirstResponder(hotbarView)
         hotbarView.evaluateJavaScript("window.ummShow?.(\(ctx))")
     }
@@ -240,17 +275,18 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         guard let d = m.body as? [String: Any], let t = d["type"] as? String else { return }
         switch t {
         case "hide": hideHotbar()
-        case "saved": hideHotbar(); play("Pop")
-        case "error": play("Basso")
+        case "saved": hideHotbar(); play("saved"); flash(teal, border: 4, duration: 0.45); hud(d["label"] as? String ?? "Saved")
+        case "error": play("error"); flash(.systemRed, border: 4, duration: 0.45); if let l = d["label"] as? String { hud(l) }
         case "capture", "area":
             hideHotbar()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.capture(area: t == "area") }
+            let note = (d["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.capture(area: t == "area", note: note) }
         case "openMain": hideHotbar(restore: false); showMain(d["query"] as? String)
-        case "recording": status.button?.image = (d["on"] as? Bool) == true ? red : icon
+        case "recording": recording(d["on"] as? Bool == true)
         case "resize":
             if let h = d["height"] as? Double {
-                let f = hotbar.frame
-                hotbar.setFrame(NSRect(x: f.minX, y: f.maxY - h, width: 680, height: h), display: true)
+                // zero duration, so it replaces a show animation still running
+                NSAnimationContext.runAnimationGroup { $0.duration = 0; hotbar.animator().setFrame(NSRect(x: hotbar.frame.minX, y: top - h, width: 680, height: h), display: true) }
                 hotbar.invalidateShadow()
             }
         case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
@@ -273,21 +309,100 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         }
     }
 
-    func play(_ name: String) { NSSound(named: name)?.play() }
+    func play(_ name: String) {
+        if sounds[name] == nil { sounds[name] = Bundle.main.url(forResource: name, withExtension: "wav").flatMap { NSSound(contentsOf: $0, byReference: true) } ?? NSSound(named: name) }
+        sounds[name]?.stop()
+        sounds[name]?.play()
+    }
 
-    func capture(area: Bool) {
+    let teal = NSColor(red: 0.37, green: 0.70, blue: 0.65, alpha: 1)
+
+    // a full screen tint (border 0) or a ring along the screen edge that fades out. Each call has its own window, so calls do not cut each other off
+    func flash(_ color: NSColor, alpha: CGFloat = 1, border: CGFloat = 0, duration: Double) {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return }
+        let w = NSPanel(contentRect: mouseScreen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let v = NSView()
+        v.wantsLayer = true
+        if border > 0 { v.layer?.borderWidth = border; v.layer?.borderColor = color.withAlphaComponent(alpha).cgColor; v.layer?.cornerRadius = 12 }
+        else { v.layer?.backgroundColor = color.withAlphaComponent(alpha).cgColor }
+        w.contentView = v
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = false
+        w.level = .screenSaver
+        w.ignoresMouseEvents = true
+        w.isReleasedWhenClosed = false
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        w.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup({ $0.duration = duration; w.animator().alphaValue = 0 }) { w.orderOut(nil) }
+    }
+
+    var mouseScreen: NSScreen { NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main! }
+
+    func hud(_ text: String) {
+        hudTick += 1
+        let tick = hudTick
+        hudLabel.stringValue = text
+        hudLabel.sizeToFit()
+        let z = hudLabel.frame.size, f = mouseScreen.visibleFrame
+        hudLabel.setFrameOrigin(NSPoint(x: 14, y: 9))
+        hudPanel.setFrame(NSRect(x: f.midX - (z.width + 28) / 2, y: f.maxY - f.height * 0.12 - z.height - 18, width: z.width + 28, height: z.height + 18), display: true)
+        hudPanel.alphaValue = 1
+        hudPanel.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            guard tick == self.hudTick else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; self.hudPanel.animator().alphaValue = 0 }) { if tick == self.hudTick { self.hudPanel.orderOut(nil) } }
+        }
+    }
+
+    // the message from the page and the menu item both end here. A repeat of the current state does nothing
+    func recording(_ on: Bool) {
+        guard on != (recTimer != nil) else { return }
+        recTimer?.invalidate()
+        recTimer = nil
+        status.button?.image = on ? red : icon
+        status.button?.title = ""
+        stopItem.isHidden = !on
+        if on {
+            let t0 = Date()
+            recTimer = Timer(timeInterval: 1, repeats: true) { _ in
+                let s = Int(Date().timeIntervalSince(t0))
+                self.status.button?.title = String(format: " %d:%02d", s / 60, s % 60)
+            }
+            RunLoop.main.add(recTimer!, forMode: .common) // keeps counting while the menu is open
+        }
+        play(on ? "rec-start" : "rec-stop")
+        flash(on ? .systemRed : teal, alpha: 0.9, border: 6, duration: on ? 0.9 : 0.6)
+        hud(on ? "Recording" : "Recording saved, transcribing")
+    }
+
+    @objc func stopRecording() {
+        DispatchQueue.global().async {
+            _ = backend.request("POST", "/api/record/stop")
+            DispatchQueue.main.async { self.recording(false) }
+        }
+    }
+
+    func capture(area: Bool, note: String?) {
         var b: [String: Any] = ["app": lastApp, "area": area]
+        if let n = note { b["note"] = n }
+        if !area { play("shutter") } // the sound cannot land in the image
         if let d = lastDisplay { b["display"] = d }
         if let u = lastURL { b["meta"] = ["source": "hotbar", "url": u] }
         let body = (try? JSONSerialization.data(withJSONObject: b)) ?? Data()
         DispatchQueue.global().async {
             let r = backend.request("POST", "/api/capture", headers: ["Content-Type": "application/json"], body: body)
-            // 200 with a null id means the selection was cancelled with Esc: no sound
+            // 200 with a null id means the selection was cancelled with Esc: nothing
             let saved = r.flatMap { (try? JSONSerialization.jsonObject(with: $0.2)) as? [String: Any] }?["id"] is Int
             DispatchQueue.main.async {
-                if r?.0 != 200 { self.play("Basso") } else if saved { self.play("Pop") }
-                if let why = [403: " Excluded app", 412: " Allow Screen Recording"][r?.0 ?? 0] { // say why in the menu bar for a moment
-                    self.status.button?.title = why
+                if r?.0 != 200 { self.play("error"); self.flash(.systemRed, border: 4, duration: 0.45) } else if saved {
+                    if area { self.play("shutter") }
+                    self.flash(.white, alpha: 0.35, duration: 0.3) // after the request returned, so it is never in the image
+                    self.hud(note == nil ? "Screenshot saved" : "Screenshot saved with note")
+                }
+                if let why = [403: "Excluded app", 412: "Allow Screen Recording"][r?.0 ?? 0] { // say why in the menu bar for a moment
+                    self.hud(why)
+                    self.status.button?.title = " " + why
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.status.button?.title = "" }
                 }
             }

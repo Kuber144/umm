@@ -53,7 +53,7 @@ People can add more (for example `work`, `side-project`), rename them (not onto 
 All JSON. Paths are the same over the socket and in the Vite dev proxy.
 
 ```
-Item = {id, profile, kind, content, file, app, meta, created_at}
+Item = {id, profile, kind, content, file, app, meta, created_at, note}
 kind: screenshot | text | path | link | voice
 file: name under /api/files/ (screenshot jpg or voice m4a), else null. Screenshots also have /api/thumb/{file}, 640px wide.
       A screenshot past screenshot_days has file null and keeps its OCR text and meta
@@ -67,6 +67,8 @@ meta: JSON object or null. Every save sets meta.source: hotbar | app (main windo
       meta.path is the absolute path of the file POST /api/import read. umm keeps a copy of an image, and screenshot_days
       deletes only that copy, so the detail can still show where the original is
       meta.transcribing is true on a voice item while Whisper runs. Its content is empty until then
+note: string or null. What the user wrote about the item, apart from content (OCR text, transcript). Whisper only sets content, so it never touches the note.
+      Indexed for search and embedded together with content. Max 100,000 characters
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0&source=&agent=&project=&session=&mode=hybrid -> [Item]
          profile defaults to active, "*" = all. kind may be comma separated.
@@ -80,14 +82,15 @@ GET    /api/origins?profile=                             -> [{source, agent, cwd
                                                                     most first, for the source, agent and project filters
 GET    /api/icon?app=                                    -> png      the icon of the installed app with that name (the part before ":"),
                                                                     64px, cached in <data>/files/icons/app-<name>.png. 404 when no app has the name
-POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok. Max 100,000 characters, else 422.
+POST   /api/items      {content, app?, profile?, meta?, note?}  -> {id}     kind auto detected, multi-line ok. Max 100,000 characters, else 422.
                                                                     Only an absolute path or one starting with ~/ is kind path.
                                                                     The same text, kind and profile saved in the last 10 seconds returns that id
                                                                     and saves nothing, so a double Enter saves once
-PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile. Same 100,000 limit.
+PATCH  /api/items/{id} {content?, profile?, note?}       -> {}       edit text, note and/or move to another profile. Same 100,000 limit.
+                                                                    note "" clears it, a missing note leaves it
                                                                     A new text on a link drops its fetched title and icon and looks it up again
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?, meta?, display?, area?, profile?} -> {id}  screenshot + OCR + thumbnail, takes ~1s. 403 when the front app is in excluded_apps
+POST   /api/capture    {app?, meta?, note?, display?, area?, profile?} -> {id}  screenshot + OCR + thumbnail, takes ~1s. 403 when the front app is in excluded_apps
                                                                     (the server reads the front app itself, whatever `app` says). 412 when screencapture fails,
                                                                     which usually means Screen Recording is not allowed for umm
                                                                     display: 1-based number for screencapture -D, default main display
@@ -103,11 +106,15 @@ POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an i
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
                                                                     clipboard is marked secret (see /api/context)
-GET    /api/context?url=                                 -> {app, profile, clipboard_kind, clipboard, recording, url}
+GET    /api/clipboard/history                            -> [{text, at}]   text copies since the backend started, newest first, at is local ISO time.
+                                                                    In memory only, never on disk. Up to clipboard_history entries, an older copy of the same
+                                                                    text is dropped. Secret marked copies are never kept. Save one with POST /api/items
+GET    /api/context?url=                                 -> {app, profile, clipboard_kind, clipboard, recording, url, history}
                                                                     clipboard_kind: text | image | files | null. clipboard is the text, or the
                                                                     copied paths one per line, empty for an image. Max 2000 chars. Clipboard content marked
                                                                     org.nspasteboard.ConcealedType or TransientType (password managers) is treated as empty.
                                                                     url is the query parameter echoed back, else null. Swift sends it, see "Page URL"
+                                                                    history is the number of entries in GET /api/clipboard/history
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new. Names are 1 to 60 characters, no `*`, `/` or newline
 POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent. 409 when `to` exists
@@ -120,7 +127,8 @@ POST   /api/storage/move {path}                          -> {path}   moves the d
                                                                     and empty (a .DS_Store is fine) or missing. 400 {detail} otherwise, 409 while recording or moving.
                                                                     Every other write gets 503 during the move
 GET    /api/record                                       -> {on, seconds, transcribing}
-POST   /api/record/start {app?, meta?}                          -> same as GET /api/record. The voice item's app is empty when umm itself is in front
+POST   /api/record/start {app?, meta?, note?}                   -> same as GET /api/record. The voice item's app is empty when umm itself is in front.
+                                                                    note is saved on the voice item
 POST   /api/record/stop                                  -> same. The voice item exists when this returns, with its m4a, empty content and
                                                                     meta.transcribing. Whisper fills content in the background and clears the flag.
                                                                     The main window polls GET /api/record and reloads its list when transcribing changes.
@@ -142,12 +150,14 @@ GET    /api/thumb/{name}                                 -> jpg      thumbnail o
 Settings live in `settings.json` in the data folder. The defaults are the `Settings` model in `backend/settings.py`, the only place they are written. `settings.get()` reads the file on every call, so `record.py` and `api.py` pick up a change without a restart.
 
 ```
-Settings = {languages, model, enrich_links, excluded_apps, screenshot_days}
+Settings = {languages, model, enrich_links, excluded_apps, clipboard_history, screenshot_days}
 languages:      language codes Whisper may detect, default ["en", "hi"]. [] allows any language
 model:          "small" | "medium", default "medium"
 enrich_links:   default true, fetch title and description of saved links (not links with a secret looking query parameter)
 excluded_apps:  default [], app names (the part of Item.app before ":", case insensitive)
                 that POST /api/capture refuses
+clipboard_history: default 10, 0 to 50. How many text copies the backend remembers for GET /api/clipboard/history. 0 turns it off
+                and clears the list. A thread checks the pasteboard every second. Kept in memory, lost when the backend quits
 screenshot_days: default 0 (keep forever). A background thread runs at backend start and every 24 hours. It deletes the image
                 and thumbnail of every screenshot older than this many days and sets its file to null. The item, OCR text and meta stay.
                 It removes umm's copy only. An imported image's original file is left alone, and meta.path still names it
@@ -175,15 +185,21 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 
 ```
 {type: "hide"}                     close the hotbar, focus returns to the previous app
-{type: "saved"}                    close the hotbar and play the "saved" sound (UI already did the fetch)
-{type: "error"}                    play the error sound
-{type: "capture"}                  close the hotbar, wait 250ms, POST /api/capture with the app from context and the
-                                   display under the mouse, play sound. fallback: fetch POST /api/capture.
-                                   On 412 the status item shows "Allow Screen Recording" for 3 seconds
-{type: "area"}                     same, with area: true. No sound when the selection is cancelled
+{type: "saved", label?}            close the hotbar, play the "saved" sound, show label (default "Saved") in the HUD
+                                   (UI already did the fetch)
+{type: "error", label?}            play the error sound, show label in the HUD when given
+{type: "capture", note?}           close the hotbar, wait 250ms, POST /api/capture with the app from context, the
+                                   display under the mouse and note when not empty. Plays the shutter sound as the request
+                                   is sent, then the HUD says "Screenshot saved" ("Screenshot saved with note" with a note).
+                                   fallback: fetch POST /api/capture. On 403 or 412 it plays the error sound, and the HUD and
+                                   the status item show "Excluded app" or "Allow Screen Recording" (the status item for 3 seconds)
+{type: "area", note?}              same, with area: true. No sound at the start, the shutter plays when it saved.
+                                   Nothing happens when the selection is cancelled
 {type: "openMain", query?}         close the hotbar, show the main window, then call window.ummOpen?.({query})
                                    fallback: location.hash = ""
-{type: "recording", on}            update the status bar item (red while recording)
+{type: "recording", on}            on: "rec-start" sound, HUD "Recording", red status item with the elapsed time (m:ss) and a
+                                   "Stop recording" menu item (POST /api/record/stop). off: both go away, "rec-stop" sound,
+                                   HUD "Recording saved, transcribing". A repeat of the current state is ignored
 {type: "resize", height}           hotbar panel height in CSS px, width is fixed at 680
 {type: "openExternal", url}        open in the default browser
 {type: "settings"}                 ask for the login item state, Swift replies with window.ummSettings
@@ -193,6 +209,10 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "chooseFolder"}             folder picker (can create folders). Swift replies with window.ummFolder, nothing on cancel
 {type: "quit"}                     kill switch, quits the app and the backend
 ```
+
+The HUD is a small panel with a text label near the top of the screen under the mouse. It never takes focus and fades after 1.6 seconds. The hotbar fades in and slides up 6 points, unless Reduce Motion is on.
+
+Sounds are `app/sounds/*.wav` (shutter, saved, rec-start, rec-stop, error). `scripts/make-sounds.py` generates them and `build.sh` copies them into the app. `play(name)` falls back to the system sound of that name when a file is missing. Each action also flashes the screen, unless Reduce Motion is on. A screenshot saved gives a white flash, after the request returned so it is not in the image. Recording start is a red ring, recording stop and a saved note or clipboard is a teal ring, an error is a red ring.
 
 Swift to UI:
 
@@ -225,15 +245,18 @@ Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot 
 
 1. Screenshot
 2. Screenshot an area
-3. Save clipboard (text preview, "Save clipboard image" or "Save N copied files", hidden when the clipboard is empty)
-4. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
-5. Start recording / Stop recording (shows elapsed time while on)
-6. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes
-7. Switch profile
-8. Open umm (main window)
-9. Quit umm. While recording, the first `Enter` asks again
+3. Screenshot with a note: opens the note editor, then `Cmd+Enter` takes the screenshot with the note
+4. Save clipboard (text preview, "Save clipboard image" or "Save N copied files", hidden when the clipboard is empty). The text preview is blurred until the row is selected. `Tab` on a text clipboard opens it in the editor, `Cmd+Enter` saves the edited text
+5. Pick from clipboard history (only when the clipboard history setting has more than one entry): lists recent copies, typing filters them, `Enter` saves one, `Tab` edits it first, `Esc` goes back. The text is blurred until the row is selected
+6. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
+7. Start recording / Stop recording (shows elapsed time while on)
+8. Record with a note: opens the note editor, then `Cmd+Enter` starts the recording with the note. Hidden while recording
+9. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes
+10. Switch profile
+11. Open umm (main window)
+12. Quit umm. While recording, the first `Enter` asks again
 
-While typing, `Enter` runs a row only when the query starts its label ("scr" takes a screenshot). Otherwise it copies the first matching memory, or searches. `Enter` while an input method is composing does nothing, and the arrow keys stop at the ends. A half-written note stays when the hotbar closes.
+While typing, `Enter` runs a row only when the query starts its label ("rec" starts a recording). Otherwise it copies the first matching memory, or searches. `Enter` while an input method is composing does nothing, and the arrow keys stop at the ends. A half-written note stays when the hotbar closes. Notes opened from a combo row or for clipboard editing start empty and do not replace that draft. Saves show a short HUD ("Note saved", "Clipboard saved", "Image saved").
 
 ## Main window
 
@@ -241,9 +264,9 @@ The sidebar lists profiles, then All profiles, Connections and Settings. A long 
 
 The rest of the window is a toolbar (profile name, search, record, a New note icon), a list and a preview pane. Each row is two lines: an icon, a title and the time, then one quiet line (text snippet, site, folder, or agent and project). The icon is the app's icon (`/api/icon`), a link's site icon, or a monogram for agents and apps that are not installed, with a small badge for the kind. Rows with no source show the kind alone. Screenshot thumbnails only appear in the pane. `meta.url` shows as a link on the row and in the pane, and opens with `openExternal`. Above the list are kind filters and a Sort and filter menu (app, source, agent, project, dates). The agent profile adds chips to narrow by agent and project. Selected rows use `--sel` while the list has focus and `--sel-dim` when it does not.
 
-The pane shows the selected item in full, laid out by kind. A screenshot shows the image, its window title and a "Text in image" section that is closed unless there is a search. A link shows a card with its site icon, a voice note the player, its text and the English translation ("Transcribing..." with a slow teal dot until Whisper is done, in the row, the pane and hotbar search), a path the file, and notes and agent memories their text. Below that is a list of facts: app or agent, page, project or folder, how it was saved, profile and date. The toolbar above the pane has icon buttons that depend on the kind. A screenshot gets Copy image, Copy text, Open in Preview and Show in Finder. A link gets Copy link and Open link, a path gets Copy path and Show in Finder, and the rest get Copy text. Every kind but a screenshot also gets Edit, except a voice note still transcribing. Move to profile and Delete are on the right. Keys: `Cmd+C` copies (the image for a screenshot), `Cmd+Shift+C` copies the text, `Cmd+O` opens, `Cmd+Shift+R` shows in Finder, `Cmd+E` edits. Clicking the image opens a full window view: click switches between fit and 100%, scrolling pans, the arrow keys step through screenshots, Esc closes. New note (`Cmd+N`) opens an editor in the pane. `Cmd+Enter` saves to the profile on screen.
+The pane shows the selected item in full, laid out by kind. A screenshot shows its note (if any), the image, its window title and a "Text in image" section that is closed unless there is a search. A link shows a card with its site icon, a voice note its note (if any), the player, its text and the English translation ("Transcribing..." with a slow teal dot until Whisper is done, in the row, the pane and hotbar search), a path the file, and notes and agent memories their text. Below that is a list of facts: app or agent, page, project or folder, how it was saved, profile and date. The toolbar above the pane has icon buttons that depend on the kind. A screenshot gets Copy image, Copy text, Open in Preview and Show in Finder. A link gets Copy link and Open link, a path gets Copy path and Show in Finder, and the rest get Copy text. Text, link and path items get Edit, which changes the content. A screenshot or voice note gets Add note or Edit note, which saves `note` through `PATCH /api/items/{id}` (empty clears it) and never touches the OCR text or transcript. A note shows above the image or player, and as the row title with the old title moved to the second line. Move to profile and Delete are on the right. Keys: `Cmd+C` copies (the image for a screenshot), `Cmd+Shift+C` copies the text, `Cmd+O` opens, `Cmd+Shift+R` shows in Finder, `Cmd+E` edits. Clicking the image opens a full window view: click switches between fit and 100%, scrolling pans, the arrow keys step through screenshots, Esc closes. New note (`Cmd+N`) opens an editor in the pane. `Cmd+Enter` saves to the profile on screen.
 
-Keys in the list: Up and Down (or `j` and `k`) move, Shift extends the selection, `Cmd+A` selects all. Esc closes the open menu or popover first, then clears a multiple selection, then the selected row, then the search. Cmd-click adds or removes a row, Shift-click selects a range. Enter opens a link, zooms a screenshot, or copies anything else. Space zooms a screenshot. Delete removes the selection, and one Undo in the toast (or `Cmd+Z`) brings the whole batch back, selected. Keys pressed while an input method is composing (`isComposing`, or keyCode 229 for the Enter that confirms it in WebKit) reach no shortcut, in both windows. When the window regains focus the list reloads every row already loaded and keeps the selected item selected, even when new saves pushed it down. Rows highlight the query their results were found with, so typing does not re-render a long list. With several rows selected, the pane counts them by kind and offers Move to and Delete for all of them. `Cmd+K` or `/` searches, `Cmd+1` to `Cmd+9` switch profiles, `Cmd+,` opens Settings. `Cmd+K` and `Cmd+N` also work from Settings and Connections and go back to the list.
+Keys in the list: Up and Down (or `j` and `k`) move, Shift extends the selection, `Cmd+A` selects all. Esc closes the open menu or popover first, then clears a multiple selection, then the selected row, then the search. Cmd-click adds or removes a row, Shift-click selects a range. Enter opens a link, zooms a screenshot, or copies anything else. Space zooms a screenshot. Delete asks first with `confirm()` (a native alert in the app), naming the kind or the count and saying the file goes too. It then removes the selection, and one Undo in the toast (or `Cmd+Z`) brings the whole batch back, selected. Keys pressed while an input method is composing (`isComposing`, or keyCode 229 for the Enter that confirms it in WebKit) reach no shortcut, in both windows. When the window regains focus the list reloads every row already loaded and keeps the selected item selected, even when new saves pushed it down. Rows highlight the query their results were found with, so typing does not re-render a long list. With several rows selected, the pane counts them by kind and offers Move to and Delete for all of them. `Cmd+K` or `/` searches, `Cmd+1` to `Cmd+9` switch profiles, `Cmd+,` opens Settings. `Cmd+K` and `Cmd+N` also work from Settings and Connections and go back to the list.
 
 Every icon button has a tooltip. A control sets `data-tip`, and `data-keys` for its shortcut, and one shared `Tips` element in `ui.tsx` shows it at once on hover. No element uses `title`. Every dropdown (sort and filters, profile options, Move to, the Settings pickers) is the shared `Menu` from `ui.tsx`, not a native select. It marks the current item with a check, and takes the arrow keys, Enter, Esc and typing to jump. It opens above the button, or further left, when there is no room below.
 
@@ -257,7 +280,7 @@ Connections lists `GET /api/agents`: connected agents with a live dot, then rece
 
 ## Settings view
 
-The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, the login item, the hotbar key), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once. Pickers use the shared `Menu`.
+The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, clipboard history of Off, 10, 25 or 50 entries, the login item, the hotbar key), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once. Pickers use the shared `Menu`.
 
 To move the data, Change... takes a folder, typed or picked with `chooseFolder`. The data goes to `<folder>/umm`, and the UI shows that path before it posts `/api/storage/move`. The backend then restarts in the new place, so the UI polls `GET /api/storage` every second until the path changes, and gives up after 60 seconds. A 400 or 409 shows its `detail` under the field. On an older backend the UI hides the image retention row, and the move says this version cannot do it.
 

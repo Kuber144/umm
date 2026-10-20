@@ -14,6 +14,7 @@ swiftc -O ${UMM_SWIFT_FLAGS} app/*.swift -o $BIN
 ID_SUFFIX=$(git rev-parse --git-dir 2>/dev/null | grep -q "/worktrees/" && echo ".worktree" || true)
 sed -e "s|__ROOT__|$PWD|" -e "s|<string>local.umm</string>|<string>local.umm$ID_SUFFIX</string>|" app/Info.plist > $APP/Contents/Info.plist
 for f in AppIcon.icns StatusIcon.png; do [ -f app/$f ] && cp app/$f $APP/Contents/Resources/; done || true
+cp app/sounds/*.wav $APP/Contents/Resources/
 # a stable "umm local signing" certificate keeps macOS permissions across rebuilds, else sign ad hoc
 ID=$(security find-identity -p codesigning 2>/dev/null | awk '/"umm local signing"/{print $2; exit}')
 codesign -s "${ID:--}" --force --deep $APP

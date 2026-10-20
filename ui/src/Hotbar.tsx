@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { api, fileUrl, type Ctx, type Item, type Profiles } from './api'
+import { api, fileUrl, type Ctx, type Item, type Profiles, type Rec } from './api'
 import { native, pending, send } from './bridge'
 import { appName, copyText, linkLabel } from './Memory'
 import { AppIcon, Dot, Icon, Kbd, ago, clock, hl, type IconName } from './ui'
 import icon from '../../assets/icon.svg'
 import './hotbar.css'
 
-type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void }
-type Mode = 'menu' | 'note' | 'profiles'
+type Row = { id: string; icon: IconName | 'dot'; label: string; keys?: string; detail?: ReactNode; run: () => void; edit?: () => void }
+type Mode = 'menu' | 'note' | 'profiles' | 'clip'
+// what a note does on Cmd+Enter: header, footer hint
+const THEN = { save: ['', 'save'], shot: ['Then takes a screenshot', 'screenshot'], rec: ['Then starts recording', 'record'], clip: ['Edit, then save', 'save'] }
+const flat = (s: string) => [...s.trim().replace(/\s+/g, ' ')].slice(0, 70).join('')
 
 // first n characters, without cutting an emoji in half
 const chars = (s: string, n: number) => [...s].slice(0, n).join('')
@@ -18,6 +21,9 @@ export default function Hotbar() {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(-1)
   const [note, setNote] = useState('')
+  const [then, setThen] = useState<keyof typeof THEN>('save')
+  const [cnote, setCnote] = useState('')  // combo notes are fresh, so the plain draft in `note` survives
+  const [hist, setHist] = useState<{ text: string; at: string }[]>([])
   const [mems, setMems] = useState<Item[]>([])
   const [profiles, setProfiles] = useState<Profiles>({ active: '', all: [] })
   const [rec, setRec] = useState(ctx?.recording ?? { on: false, seconds: 0, transcribing: 0 })
@@ -64,6 +70,8 @@ export default function Hotbar() {
   }, [q, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fail = () => send({ type: 'error' })
+  const openNote = (t: keyof typeof THEN, text = '') => { setThen(t); setCnote(text); setMode('note') }
+  const recd = (p: Promise<Rec>) => p.then(r => { setRec(r); send({ type: 'recording', on: r.on }); send({ type: 'hide' }) }, fail)
   const clip = ctx?.clipboard.trim() ?? ''
   const kind = ctx?.clipboard_kind
   const nfiles = kind === 'files' ? clip.split('\n').length : 0
@@ -72,14 +80,19 @@ export default function Hotbar() {
   const menu: (Row & { kw: string })[] = [
     { id: 'shot', icon: 'screenshot', label: 'Take a screenshot', kw: 'capture screen', run: () => send({ type: 'capture' }) },
     { id: 'area', icon: 'area', label: 'Screenshot an area', kw: 'capture screen region select', run: () => send({ type: 'area' }) },
+    { id: 'shotnote', icon: 'screenshot', label: 'Screenshot with a note', kw: 'capture annotate caption', run: () => openNote('shot') },
     ...(kind ? [{ id: 'clip', icon: kind === 'image' ? 'screenshot' as const : kind === 'files' ? 'files' as const : 'clip' as const, kw: 'paste copy',
       label: kind === 'image' ? 'Save clipboard image' : kind === 'files' ? `Save ${nfiles} copied file${nfiles > 1 ? 's' : ''}` : 'Save clipboard',
-      detail: kind === 'image' ? null : <span className="peek">{chars(clip.replace(/\s+/g, ' '), 70)}</span>,
-      run: () => { api.saveClipboard(ctx?.app, 'hotbar', undefined, ctx?.url).then(() => send({ type: 'saved' }), fail) } }] : []),
-    { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', detail: note.trim() ? <span className="peek">{chars(note.trim(), 40)}</span> : null, run: () => setMode('note') },
+      detail: kind === 'image' ? null : <span className="peek secret">{chars(clip.replace(/\s+/g, ' '), 70)}</span>,
+      edit: kind === 'text' ? () => api.clipHistory().then(h => openNote('clip', h[0]?.text ?? clip), fail) : undefined,  // the context text is cut at 2000
+      run: () => { api.saveClipboard(ctx?.app, 'hotbar', undefined, ctx?.url).then(() => send({ type: 'saved', label: kind === 'image' ? 'Image saved' : kind === 'files' ? `Saved ${nfiles} file${nfiles > 1 ? 's' : ''}` : 'Clipboard saved' }), fail) } }] : []),
+    ...(ctx?.history && ctx.history > 1 ? [{ id: 'hist', icon: 'clip' as const, label: 'Pick from clipboard history', kw: 'recent copies paste', detail: <span className="peek">{ctx.history} recent</span>,
+      run: () => { api.clipHistory().then(h => { setHist(h); setMode('clip'); setQ(''); setSel(-1) }, fail) } }] : []),
+    { id: 'note', icon: 'text', label: 'Write a note', kw: 'text type', detail: note.trim() ? <span className="peek">{chars(note.trim(), 40)}</span> : null, run: () => openNote('save') },
     { id: 'rec', icon: 'voice', label: rec.on ? 'Stop recording' : 'Start recording', kw: 'voice mic audio',
       detail: rec.on ? <span className="live"><i className="recdot" />{clock(rec.seconds)}</span> : rec.transcribing ? <span className="peek">transcribing</span> : null,
-      run: () => (rec.on ? api.recStop() : api.recStart('hotbar', ctx?.app)).then(r => { setRec(r); send({ type: 'recording', on: r.on }); send({ type: 'hide' }) }, fail) },
+      run: () => recd(rec.on ? api.recStop() : api.recStart('hotbar', ctx?.app)) },
+    ...(rec.on ? [] : [{ id: 'recnote', icon: 'voice' as const, label: 'Record with a note', kw: 'voice mic annotate', run: () => openNote('rec') }]),
     { id: 'find', icon: 'search', label: query ? `Search umm for "${q.trim()}"` : 'Search memories', kw: query, detail: query ? null : <span className="peek">just start typing</span>,
       run: () => (query ? send({ type: 'openMain', query: q.trim() }) : input.current?.focus()) },
     { id: 'prof', icon: 'user', label: 'Switch profile', kw: 'profiles user agent', detail: <span className="peek"><Dot name={active} />{active}</span>,
@@ -94,16 +107,18 @@ export default function Hotbar() {
     ...profiles.all.filter(p => match(p.name)).map(p => ({ id: p.name, icon: 'dot' as const, label: p.name, detail: <span className="peek">{p.name === active ? 'active, ' : ''}{p.count}</span>, run: () => pick(p.name) })),
     ...(query && !profiles.all.some(p => p.name === q.trim()) ? [{ id: '+', icon: 'dot' as const, label: `Create "${q.trim()}"`, run: () => pick(q.trim()) }] : []),
   ]
+  const histRows: Row[] = hist.filter(h => match(h.text)).map((h, i) => ({ id: '' + i, icon: 'clip', label: flat(h.text), detail: <span className="peek">{ago(h.at)}</span>,
+    run: () => { api.add(h.text, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => send({ type: 'saved', label: 'Clipboard saved' }), fail) }, edit: () => openNote('clip', h.text) }))
   // the generic search row goes last while typing, so a specific match wins Enter
   const hits = menu.filter(r => !query || r.id === 'find' || match(r.label + ' ' + r.kw))
-  const rows: Row[] = mode === 'profiles' ? profRows : query ? [...hits.filter(r => r.id !== 'find'), ...hits.filter(r => r.id === 'find')] : hits
+  const rows: Row[] = mode === 'profiles' ? profRows : mode === 'clip' ? histRows : query ? [...hits.filter(r => r.id !== 'find'), ...hits.filter(r => r.id === 'find')] : hits
   const memRows = mode === 'menu' ? mems : []
   const total = rows.length + memRows.length
   // Before any arrow key, a typed query picks a row only when it starts that row's label, else the first memory, else search.
   // So "exit" or "mic" plus Enter searches instead of quitting or recording.
   const prefix = rows.findIndex(r => r.label.toLowerCase().startsWith(query))
   const at = sel >= 0 ? Math.min(sel, Math.max(0, total - 1))
-    : !query || mode === 'profiles' ? 0 : prefix >= 0 ? prefix : memRows.length ? rows.length : rows.findIndex(r => r.id === 'find')
+    : !query || mode !== 'menu' ? 0 : prefix >= 0 ? prefix : memRows.length ? rows.length : rows.findIndex(r => r.id === 'find')
   useEffect(() => { root.current?.querySelector('li.on')?.scrollIntoView({ block: 'nearest' }) }, [at])
 
   const run = (i: number) => {
@@ -111,36 +126,43 @@ export default function Hotbar() {
     const m = memRows[i - rows.length]
     if (m) api.copy(copyText(m)).then(() => send({ type: 'hide' }), fail)
   }
-  const saveNote = () => {
-    if (note.trim()) api.add(note.trim(), 'hotbar', ctx?.app, undefined, ctx?.url).then(() => { setNote(''); send({ type: 'saved' }) }, fail)
+  const submit = () => {
+    const t = (then === 'save' ? note : cnote).trim()
+    if (then === 'shot') { setCnote(''); send({ type: 'capture', note: t || undefined }) }
+    else if (then === 'rec') { setCnote(''); recd(api.recStart('hotbar', ctx?.app, t || undefined)) }
+    else if (t) api.add(t, 'hotbar', ctx?.app, undefined, ctx?.url).then(() => { if (then === 'save') setNote(''); send({ type: 'saved', label: then === 'save' ? 'Note saved' : 'Clipboard saved' }) }, fail)
   }
   const back = () => { setMode('menu'); setQ(''); setSel(-1) }
 
   const onKey = (e: React.KeyboardEvent) => {
     if (mode === 'note') {
-      if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); saveNote() }
+      if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); submit() }
       else if (e.key === 'Escape') { e.preventDefault(); back() }
       return
     }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSel(Math.min(total - 1, at + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(Math.max(0, at - 1)) }
     else if (e.key === 'Enter' && !e.metaKey) { e.preventDefault(); run(at) }
-    else if (e.key === 'Escape') { e.preventDefault(); if (mode === 'profiles') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
+    else if (e.key === 'Tab' && rows[at]?.edit) { e.preventDefault(); rows[at].edit!() }
+    else if (e.key === 'Escape') { e.preventDefault(); if (mode !== 'menu') back(); else if (q) { setQ(''); setSel(-1) } else send({ type: 'hide' }) }
   }
 
   const tile = (r: Row) => <span className="tile">{r.icon === 'dot' ? <Dot name={r.label} /> : <Icon name={r.icon} />}</span>
   const foot = (
     <footer>
       <span className="fprof" title="Active profile: new saves land here"><Dot name={active || 'user'} />{active}</span>
-      <span className="hint">{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> save <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
+      <span className="hint">{mode === 'note' ? <><Kbd>Cmd Enter</Kbd> {THEN[then][1]} <Kbd>Esc</Kbd> back</> : mode === 'clip' ? <><Kbd>Enter</Kbd> save <Kbd>Tab</Kbd> edit <Kbd>Esc</Kbd> back</> : <><Kbd>Enter</Kbd> run <Kbd>Esc</Kbd> {q || mode === 'profiles' ? 'back' : 'close'}</>}</span>
     </footer>
   )
 
   return (
     <div className="bar" ref={root} onKeyDown={onKey}>
+      <div className="in" key={shown}>
       {mode === 'note' ? (
         <div className="note">
-          <textarea ref={area} value={note} onChange={e => setNote(e.target.value)} rows={5} placeholder="Write it down. Enter makes a new line." spellCheck />
+          {then !== 'save' && <p className="nhead">{THEN[then][0]}</p>}
+          <textarea ref={area} value={then === 'save' ? note : cnote} onChange={e => (then === 'save' ? setNote : setCnote)(e.target.value)} rows={5} spellCheck
+            placeholder={then === 'save' ? 'Write it down. Enter makes a new line.' : 'Add a note to go with it. Enter makes a new line.'} />
           {ctx?.app && <p className="nfrom">From {ctx.app.slice(0, 70)}</p>}
         </div>
       ) : (
@@ -149,18 +171,18 @@ export default function Hotbar() {
             <img className="logo" src={icon} alt="" />
             <input ref={input} value={q} onChange={e => { setQ(e.target.value); setSel(-1); setArmed(false) }} spellCheck={false} autoFocus
               role="combobox" aria-expanded aria-controls="hrows" aria-activedescendant={total ? 'h' + at : undefined}
-              placeholder={mode === 'profiles' ? 'Pick a profile, or type a new name' : 'umm... what do you want to keep or find?'} />
+              placeholder={mode === 'profiles' ? 'Pick a profile, or type a new name' : mode === 'clip' ? 'Filter recent copies' : 'umm... what do you want to keep or find?'} />
           </div>
-          <ul className={'rows' + (mode === 'profiles' ? ' capped' : '')} id="hrows" role="listbox">
+          <ul className={'rows' + (mode !== 'menu' ? ' capped' : '')} id="hrows" role="listbox">
             {rows.map((r, i) => (
-              <li key={r.id} id={'h' + i} role="option" aria-selected={i === at} className={(i === at ? 'on' : '') + (!query && mode === 'menu' && (r.id === 'rec' || r.id === 'prof') ? ' split' : '')}
+              <li key={r.id} id={'h' + i} role="option" aria-selected={i === at} className={(i === at ? 'on' : '') + (!query && mode === 'menu' && (r.id === (rec.on ? 'rec' : 'recnote') || r.id === 'prof') ? ' split' : '')}
                 onMouseMove={() => setSel(i)} onClick={() => run(i)}>
                 {tile(r)}
-                <span className="label">{r.label}</span>
+                <span className={'label' + (mode === 'clip' ? ' secret' : '')}>{r.label}</span>
                 {r.detail}
               </li>
             ))}
-            {!rows.length && <li className="none">No profile matches</li>}
+            {!rows.length && <li className="none">{mode === 'clip' ? 'No copy matches' : 'No profile matches'}</li>}
           </ul>
           {memRows.length > 0 && (
             <ul className="mems" role="listbox">
@@ -180,6 +202,7 @@ export default function Hotbar() {
         </>
       )}
       {foot}
+      </div>
     </div>
   )
 }

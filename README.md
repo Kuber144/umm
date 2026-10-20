@@ -54,9 +54,10 @@ The hotbar opens with `Ctrl+Shift+Space`.
 
 - Type to filter the rows and to see matching memories below them. `Enter` on a memory copies it.
 - Up and Down pick a row, `Enter` runs it.
-- Rows: screenshot, screenshot an area, save clipboard (text, an image or copied files), write a note, start or stop recording, search, switch profile, open umm, quit.
-- In the note editor `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back.
-- `Esc` closes the hotbar. A pop sound means it saved, a low thud means it failed.
+- Rows: screenshot, screenshot an area, screenshot with a note, save clipboard (text, an image or copied files), pick from clipboard history, write a note, start or stop recording, record with a note, search, switch profile, open umm, quit.
+- In the note editor `Enter` is a new line, `Cmd+Enter` saves (or takes the screenshot, or starts the recording), `Esc` goes back.
+- Clipboard text is blurred until its row is selected. `Tab` on a clipboard row opens it in the editor, so you can change it before saving.
+- `Esc` closes the hotbar. Every action has its own sound and a short message at the top of the screen. While recording, the menu bar shows the time and has a "Stop recording" item.
 
 The main window opens from the hotbar or the menu bar icon, which turns red while recording.
 
@@ -64,9 +65,9 @@ The main window opens from the hotbar or the menu bar icon, which turns red whil
 - `Cmd+K` searches. Filter by kind, app and date range, and sort by relevance, new or old.
 - Write a note or record your voice at the top. `Cmd+Enter` saves.
 - Move with Up, Down, `j` and `k`. `Enter` copies or opens, `Delete` removes.
-- Each item can be copied, edited, moved to another profile, deleted, or revealed in Finder when it is a path.
+- Each item can be copied, edited, moved to another profile, deleted, or revealed in Finder when it is a path. Delete asks first, then still offers Undo. Screenshots and voice notes take a note of their own, kept apart from the OCR text or transcript.
 - Drop files on the main window to save them. Images become screenshots with OCR, other files become paths.
-- `Cmd+,` opens Settings: the profile for hotkey saves, voice languages and model, apps the hotbar screenshot refuses to capture, link lookup, storage, how many days to keep screenshot images (their text stays), and open at login.
+- `Cmd+,` opens Settings: the profile for hotkey saves, clipboard history, voice languages and model, apps the hotbar screenshot refuses to capture, link lookup, storage, how many days to keep screenshot images (their text stays), and open at login.
 
 Every item belongs to one profile, and new saves go to the active one.
 
