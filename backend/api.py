@@ -360,7 +360,7 @@ def move_storage(f: Folder):
         raise HTTPException(400, f"can't create {new}: {e.strerror}")
     if not os.access(new, os.W_OK):
         raise HTTPException(400, f"{new} is not writable")
-    if set(os.listdir(new)) - db.KEEP:
+    if set(os.listdir(new)) - db.KEEP - {".DS_Store"}:  # Finder leaves one in a folder it showed
         raise HTTPException(400, f"{new} is not empty")
     moving.set()
     while writes > 1:  # this request is one
