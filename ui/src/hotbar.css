@@ -33,6 +33,19 @@ footer kbd { margin: 0 4px 0 10px; }
 .tile:has(.thumb) { width: 28px; height: 28px; overflow: hidden; }
 .thumb { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
 .mems li > .ic { width: 12px; height: 12px; flex: none; color: var(--ink-3); }
-.peekbox { border-top: 1px solid var(--line); padding: 10px 16px; font-size: 13px; line-height: 1.5; max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
-.peekbox img { display: block; max-width: 100%; max-height: 260px; border-radius: 6px; }
+.body.split { display: flex; height: 380px; }
+.split .lists { flex: 1; min-width: 0; overflow: auto; }
+.split .mems, .split .rows.capped { max-height: none; overflow: visible; }
+.split .lists .peek { display: none; }
+.peekbox { flex: none; width: 55%; padding: 12px 16px 20px; border-left: 1px solid var(--line); overflow: auto; overflow-wrap: anywhere; user-select: text; }
+.peekbox > img { display: block; max-width: 100%; border-radius: 8px; }
+.peekbox .prose { font-size: 13.5px; line-height: 20px; margin-bottom: 12px; }
+.peekbox h2 { font-size: 14px; line-height: 19px; font-weight: 600; overflow-wrap: anywhere; }
+.peekbox .hero img { max-height: 220px; }
+.peekbox.screenshot h2 { margin: 12px 0 6px; }
+.peekbox .card > b { font-size: 14px; line-height: 19px; }
+.pinfo { margin: 0 0 8px; font-size: 12px; color: var(--ink-3); white-space: normal; }
+.ask .types { flex: none; appearance: none; -webkit-appearance: none; border: 0; border-radius: 7px; padding: 4px 10px; background: var(--sunk); box-shadow: inset 0 0 0 1px var(--line); font-size: 12.5px; color: var(--ink-2); }
 li.on .tile:has(img) { background: var(--card); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.peekbox .hero { cursor: default; }
+.lists > .mems:first-child { border-top: 0; }

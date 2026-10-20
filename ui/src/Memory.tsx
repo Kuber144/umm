@@ -149,6 +149,41 @@ function Player({ file }: { file: string }) {
 // The right pane: the whole item, its details and actions. Every action has keys, shown in its tooltip.
 type Tool = [IconName, string, string, () => void]
 type Maybe<T> = T | false | '' | null | undefined
+// What an item holds, by kind. The main window preview and the hotbar preview pane both show it.
+export function Body({ it, q, zoom }: { it: Item; q: string; zoom?: () => void }) {
+  const m = it.meta
+  const shot = it.kind === 'screenshot'
+  const lp = it.kind === 'link' ? linkParts(it) : null
+  const [said, english] = voiceParts(it.content)
+  const slash = it.content.replace(/\/$/, '').lastIndexOf('/')
+  const notePara = it.note && <p className="prose note">{hl(it.note, q)}</p>
+  return shot ? <>
+    {notePara}
+    {it.file
+      ? <button className="hero" onClick={zoom} data-tip="Zoom" data-keys="Space" aria-label="Zoom screenshot"><img src={fileUrl(it.file)} alt="" /></button>
+      : <p className="gone"><Icon name="screenshot" />The image was removed after the time set in Settings. Its text is kept.</p>}
+    <h2>{hl(winTitle(it.app) || appName(it.app) || 'Screenshot', q)}</h2>
+    {it.content.trim()
+      ? <details className="ocr" open={!!q.trim()}><summary><Icon name="chevron" />Text in image</summary><p>{hl(it.content, q)}</p></details>
+      : <p className={m?.reading ? 'busy' : 'dim'}>{m?.reading ? 'Reading text...' : 'No text found in the image.'}</p>}
+  </> : lp ? <>
+    {lp.note && <p className="prose">{hl(lp.note, q)}</p>}
+    <a className="card" href={lp.url} onClick={openUrl(lp.url)} data-tip="Open link" data-keys="Cmd O">
+      <span className="site"><span className="kind">{m?.icon ? <img className="fav" src={fileUrl(m.icon)} alt="" /> : <Icon name="link" />}</span>{hl(lp.l?.site ?? host(lp.url), q)}{lp.l?.author && <span className="by">{hl(lp.l.author, q)}</span>}</span>
+      {lp.l?.title && <b>{hl(lp.l.title, q)}</b>}
+      {lp.l?.text && <span className="desc">{hl(lp.l.text, q)}</span>}
+      <span className="url">{lp.url}</span>
+    </a>
+  </> : it.kind === 'path' ? (
+    <div className="file"><span className="kind"><Icon name="path" /></span><div><h2>{hl(it.content.slice(slash + 1) || it.content, q)}</h2><code>{hl(home(it.content.slice(0, slash + 1)), q)}</code></div></div>
+  ) : it.kind === 'voice' ? <>
+    {notePara}
+    {it.file && <Player file={it.file} />}
+    {m?.transcribing ? <p className="busy">Transcribing...</p> : <p className="prose">{hl(said, q)}</p>}
+    {english && <div className="trans"><h3>English translation</h3><p>{hl(english, q)}</p></div>}
+  </> : <p className="prose">{hl(it.content, q)}</p>
+}
+
 export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Act; profiles: Opt[] }) {
   const [editing, setEditing] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -161,8 +196,6 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
   const base = noted ? it.note ?? '' : it.content
   const done = () => (ta.current!.value.trim() !== base ? (noted ? act.note : act.save)(it, ta.current!.value) : Promise.resolve()).then(() => setEditing(false), () => {})
   const lp = it.kind === 'link' ? linkParts(it) : null
-  const [said, english] = voiceParts(it.content)
-  const slash = it.content.replace(/\/$/, '').lastIndexOf('/')
 
   const tools = ([
     shot ? ['copy', 'Copy image', 'Cmd C', () => act.shot(it, 'copy')] : ['copy', lp ? 'Copy link' : it.kind === 'path' ? 'Copy path' : 'Copy text', 'Cmd C', () => act.copy(it)],
@@ -184,7 +217,6 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
     return () => window.removeEventListener('keydown', k)
   })
 
-  const notePara = it.note && <p className="prose note">{hl(it.note, q)}</p>
   const body = editing ? (
     <div className="edit">
       <textarea ref={ta} autoFocus defaultValue={base} rows={Math.min(14, base.split('\n').length + 2)}
@@ -195,31 +227,7 @@ export function Preview({ it, q, act, profiles }: { it: Item; q: string; act: Ac
         }} />
       <div className="btns"><button className="btn" onClick={() => setEditing(false)}>Cancel</button><button className="btn primary" onClick={done}>Save <Kbd>Cmd Enter</Kbd></button></div>
     </div>
-  ) : shot ? <>
-    {notePara}
-    {it.file
-      ? <button className="hero" onClick={() => act.zoom(it)} data-tip="Zoom" data-keys="Space" aria-label="Zoom screenshot"><img src={fileUrl(it.file)} alt="" /></button>
-      : <p className="gone"><Icon name="screenshot" />The image was removed after the time set in Settings. Its text is kept.</p>}
-    <h2>{hl(winTitle(it.app) || from || 'Screenshot', q)}</h2>
-    {it.content.trim()
-      ? <details className="ocr" open={!!q.trim()}><summary><Icon name="chevron" />Text in image</summary><p>{hl(it.content, q)}</p></details>
-      : <p className={m?.reading ? 'busy' : 'dim'}>{m?.reading ? 'Reading text...' : 'No text found in the image.'}</p>}
-  </> : lp ? <>
-    {lp.note && <p className="prose">{hl(lp.note, q)}</p>}
-    <a className="card" href={lp.url} onClick={openUrl(lp.url)} data-tip="Open link" data-keys="Cmd O">
-      <span className="site"><span className="kind">{m?.icon ? <img className="fav" src={fileUrl(m.icon)} alt="" /> : <Icon name="link" />}</span>{hl(lp.l?.site ?? host(lp.url), q)}{lp.l?.author && <span className="by">{hl(lp.l.author, q)}</span>}</span>
-      {lp.l?.title && <b>{hl(lp.l.title, q)}</b>}
-      {lp.l?.text && <span className="desc">{hl(lp.l.text, q)}</span>}
-      <span className="url">{lp.url}</span>
-    </a>
-  </> : it.kind === 'path' ? (
-    <div className="file"><span className="kind"><Icon name="path" /></span><div><h2>{hl(it.content.slice(slash + 1) || it.content, q)}</h2><code>{hl(home(it.content.slice(0, slash + 1)), q)}</code></div></div>
-  ) : it.kind === 'voice' ? <>
-    {notePara}
-    {it.file && <Player file={it.file} />}
-    {m?.transcribing ? <p className="busy">Transcribing...</p> : <p className="prose">{hl(said, q)}</p>}
-    {english && <div className="trans"><h3>English translation</h3><p>{hl(english, q)}</p></div>}
-  </> : <p className="prose">{hl(it.content, q)}</p>
+  ) : <Body it={it} q={q} zoom={() => act.zoom(it)} />
 
   const facts = ([
     mcp ? ['Agent', <><AppIcon name={m.agent ?? 'Agent'} />{m.agent ?? 'Agent'}<span className="dim">{m.agent_version}</span></>]

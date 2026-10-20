@@ -9,7 +9,7 @@ import icon from '../../assets/icon.svg'
 import './main.css'
 
 const PAGE = 40
-const KINDS: [Kind, string, string][] = [['screenshot', 'Screenshots', 'screenshot'], ['text', 'Notes', 'note'], ['link', 'Links', 'link'], ['path', 'Paths', 'path'], ['voice', 'Voice', 'voice note']]
+export const KINDS: [Kind, string, string][] = [['screenshot', 'Screenshots', 'screenshot'], ['text', 'Notes', 'note'], ['link', 'Links', 'link'], ['path', 'Paths', 'path'], ['voice', 'Voice', 'voice note']]
 const EMPTY: Record<string, string> = {
   user: 'Press Ctrl+Shift+Space, then Enter, to keep what is on your screen. Or drop a file or some text here.',
   agent: 'Ask Claude to remember something and it shows up here.',

@@ -146,9 +146,13 @@ def run(cmd, shell=False, input=None):
     return subprocess.run(cmd, shell=shell, input=input, capture_output=True, text=True).stdout.strip()
 
 
+def front_app():
+    return "".join(re.findall(r'="(.*)"', run("lsappinfo info -only name $(lsappinfo front)", shell=True)))
+
+
 def front_window():
     """'App: window title' of the frontmost app, works for any app (browser tab title, Finder folder, editor file)."""
-    app_name = "".join(re.findall(r'="(.*)"', run("lsappinfo info -only name $(lsappinfo front)", shell=True)))
+    app_name = front_app()
     with objc.autorelease_pool():
         windows = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID)
         title = next((w["kCGWindowName"] for w in windows if w.get("kCGWindowOwnerName") == app_name
@@ -264,7 +268,7 @@ def context(url: str | None = None):  # url is the page or document Swift read o
 
 
 try:
-    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text, at} or {image, at}] newest first. What the backend saw, for the hotbar picker
+    history = json.loads((CLIP := db.DATA / "clipboard.json").read_text())  # [{text or image, at, app}] newest first. What the backend saw, for the hotbar picker
 except (OSError, ValueError):
     history = []
 (db.FILES / "clipboard").mkdir(exist_ok=True)  # the images of history, served by /api/files
@@ -286,10 +290,10 @@ def remember(entry, n):
     keep([entry, *(h for h in history if text is None or h.get("text") != text)][:n])
 
 
-def remember_image(data, n):
+def remember_image(data, n, app):
     name = f"clipboard/{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.jpg"
     jpg(data, db.FILES / name)
-    remember({"image": name, "at": datetime.now().isoformat(timespec="seconds")}, n)
+    remember({"image": name, "at": datetime.now().isoformat(timespec="seconds"), "app": app}, n)
 
 
 seen = [None]  # the pasteboard changeCount the watcher saw last. A restore sets it, so its own copy is not a new entry
@@ -306,9 +310,9 @@ def watch_clipboard():
                     keep([])
             elif changed and (r := clipboard())[0] in ("image", "text"):
                 if r[0] == "image":
-                    remember_image(pasteboard_image(), n)
+                    remember_image(pasteboard_image(), n, front_app())  # the front app made the copy
                 else:
-                    remember({"text": r[1][:db.MAX_CONTENT], "at": datetime.now().isoformat(timespec="seconds")}, n)
+                    remember({"text": r[1][:db.MAX_CONTENT], "at": datetime.now().isoformat(timespec="seconds"), "app": front_app()}, n)
 
 
 threading.Thread(target=watch_clipboard, daemon=True).start()
@@ -343,7 +347,8 @@ def restore_clipboard(a: At):
 
 @app.post("/api/clipboard/save")
 def save_history_entry(c: Clip):
-    e, app_name, meta = entry(c.at), front_window(), {"source": "hotbar"}
+    e, meta = entry(c.at), {"source": "hotbar"}
+    app_name = e.get("app") or front_window()
     if "text" in e:
         return {"id": db.add(e["text"], app=app_name, profile=c.profile, meta=meta, note=c.note)}
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
