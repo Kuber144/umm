@@ -114,3 +114,8 @@ def delete(id):
         (FILES / row[0]).unlink(missing_ok=True)
     db.execute("DELETE FROM items WHERE rowid = ?", (id,))
     db.commit()
+
+
+def get(id):
+    row = db.execute(f"SELECT {COLS} FROM items WHERE rowid = ?", (id,)).fetchone()
+    return dict(row) if row else None
