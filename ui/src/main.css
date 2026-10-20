@@ -5,20 +5,22 @@
 @media (max-width: 900px) { .shell { grid-template-columns: 172px minmax(0, 1fr); } }
 
 /* sidebar: 52px top inset clears the traffic lights and lines the first header up with the toolbar's bottom edge */
-.side { display: flex; flex-direction: column; padding: 52px 10px 10px; background: var(--side); border-right: 1px solid var(--sep); overflow: auto; }
+.side { display: flex; flex-direction: column; padding: 52px 10px 10px; background: var(--side); border-right: 1px solid var(--sep); overflow: hidden; }
 .side h3 { margin: 0 0 2px; padding: 0 8px; font-size: 11px; line-height: 20px; font-weight: 600; color: var(--ink-3); }
 nav, .foot { display: flex; flex-direction: column; gap: 1px; }
-nav { flex: 1; }
+/* many profiles scroll on their own, so All profiles, Connections and Settings stay in view */
+nav { flex: 1; min-height: 0; overflow: auto; }
 .foot { padding-top: 8px; }
-.prof { display: flex; align-items: center; gap: 7px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font-size: 13px; text-align: left; }
+.prof { display: flex; flex: none; align-items: center; gap: 7px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--ink); font-size: 13px; text-align: left; }
 .prof:hover { background: var(--hover); }
+.prof:focus-visible { outline-offset: -2px; }  /* inside, so the profile list does not clip it */
 .prof .dot { margin: 0 4px; }
 .prof .ic { color: var(--ink-3); }
 .prof .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prof .n { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .prof.on { background: var(--sel-dim); }
 .prof.add, .prof.add .ic { color: var(--ink-3); }
-.newprof { height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--teal); }
+.newprof { flex: none; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--teal); }
 
 /* toolbar: one 52px bar like a unified macOS title bar */
 main { position: relative; display: flex; flex-direction: column; min-width: 0; height: 100vh; background: var(--paper); }

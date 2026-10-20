@@ -232,7 +232,7 @@ While typing, `Enter` runs a row only when the query starts its label ("scr" tak
 
 ## Main window
 
-The sidebar lists profiles, then All profiles, Connections and Settings. Clicking a profile only browses it. The active profile, where hotkey saves go, changes in Settings, the hotbar "Switch profile" row, or by creating a profile. A note written in the main window goes to the profile on screen.
+The sidebar lists profiles, then All profiles, Connections and Settings. A long profile list scrolls on its own and the last three stay in view. Clicking a profile only browses it. The active profile, where hotkey saves go, changes in Settings, the hotbar "Switch profile" row, or by creating a profile. A note written in the main window goes to the profile on screen.
 
 The rest of the window is a toolbar (profile name, search, record, a New note icon), a list and a preview pane. Each row is two lines: an icon, a title and the time, then one quiet line (text snippet, site, folder, or agent and project). The icon is the app's icon (`/api/icon`), a link's site icon, or a monogram for agents and apps that are not installed, with a small badge for the kind. Rows with no source show the kind alone. Screenshot thumbnails only appear in the pane. `meta.url` shows as a link on the row and in the pane, and opens with `openExternal`. Above the list are kind filters and a Sort and filter menu (app, source, agent, project, dates). The agent profile adds chips to narrow by agent and project. Selected rows use `--sel` while the list has focus and `--sel-dim` when it does not.
 
