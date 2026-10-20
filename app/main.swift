@@ -131,7 +131,8 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
         if hotbar.isVisible { return hideHotbar() }
         // fetch before activating so the frontmost app is still the user's
         DispatchQueue.global().async {
-            let path = "/api/context" + (self.pageURL()?.addingPercentEncoding(withAllowedCharacters: .alphanumerics).map { "?url=" + $0 } ?? "")
+            // a data: URL can be megabytes, and over 64 KB the backend refuses the request
+            let path = "/api/context" + (self.pageURL().flatMap { $0.count < 4000 ? $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) : nil }.map { "?url=" + $0 } ?? "")
             let first = backend.request("GET", path, wait: 2)
             let r = first?.0 == 200 ? first : backend.request("GET", path, wait: 2) // the page breaks on "{}", so try twice
             DispatchQueue.main.async { self.showHotbar(r?.0 == 200 ? String(decoding: r!.2, as: UTF8.self) : "{}") }

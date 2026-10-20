@@ -149,7 +149,7 @@ To remove umm:
 
 - Screenshots fail. Screen Recording is not granted to umm. Enable it in System Settings, Privacy and Security, Screen Recording, then run `./stop.sh` and `./start.sh`. After a rebuild you may need to toggle it off and on.
 - Anything else broken. Read `~/Library/Application Support/umm/umm.log`.
-- Memories are missing. Run `umm status` to see the data folder. If `location` in `~/Library/Application Support/umm` names a folder that is missing, such as one on an unplugged drive, plug it back in, or delete `location` to go back to the default folder.
+- Memories are missing. Run `umm status` to see the data folder. If `location` in `~/Library/Application Support/umm` names a folder that is missing, such as one on an unplugged drive, umm uses the default folder until it is back and says so in `umm.log`. Plug the drive in and quit and reopen umm, or delete `location` to stay on the default folder.
 - A keychain prompt appears during the build. That is `codesign` using the signing certificate. Click Always Allow.
 - Permissions keep resetting after rebuilds. Run `scripts/setup-signing.sh`.
 - umm seems to run twice, or permissions apply to the wrong app. Two copies of umm.app exist, for example from two checkouts. Quit both, keep one folder, and start that one.

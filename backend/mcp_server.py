@@ -114,7 +114,7 @@ def api(method, path, body):
     except OSError as e:
         raise ToolError(f"the umm app is not running (or not reachable): {e}. Ask the user to open it") from e
     if r.status >= 400:
-        raise ToolError(f"umm backend error {r.status}, see {db.BASE / 'umm.log'}. Screenshots fail when umm.app lacks Screen Recording permission")
+        raise ToolError(f"umm backend error {r.status}: {data.decode(errors='replace')[:500]}. See {db.BASE / 'umm.log'}")  # detail says why: excluded app, Screen Recording
     return json.loads(data)
 
 

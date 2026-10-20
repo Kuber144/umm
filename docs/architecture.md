@@ -29,13 +29,13 @@ ui/ (React + Vite)
 
 ## Data folder
 
-The data folder defaults to `~/Library/Application Support/umm`. The backend, the MCP server and the CLI find it the same way: `UMM_DATA` if set (tests and dev), else the absolute path in the pointer file `~/Library/Application Support/umm/location`, else the default. The Swift app does not read it. The backend reads it on every start, so a restart follows a move.
+The data folder defaults to `~/Library/Application Support/umm`. The backend, the MCP server and the CLI find it the same way: `UMM_DATA` if set (tests and dev), else the absolute path in the pointer file `~/Library/Application Support/umm/location`, else the default. When the folder in the pointer is missing (an unplugged drive, a deleted folder), they use the default folder and the backend logs it, so the app keeps working. The pointer stays, and the next start after the folder is back uses it again. The Swift app does not read it. The backend reads it on every start, so a restart follows a move.
 
 `umm.sock`, `umm.log` and `location` always stay in `~/Library/Application Support/umm`, wherever the data is. A Unix socket path must be under 104 bytes, and this one is about 60 for a normal user name. Every client finds it without reading the pointer.
 
 On the first start with no pointer and no database in the default folder, `db.py` moves an old `<repo>/data` there, all but `umm.sock` and `umm.log`, and logs it.
 
-`POST /api/storage/move` copies the folder to a new place, checks the copied database has every item, writes the pointer, deletes the old folder and exits with status 0. The app then restarts the backend at the new place. During the move other writes get 503, and MCP writes wait on the database lock. An MCP server that is already running sees the pointer change on its next message and reopens at the new folder.
+`POST /api/storage/move` copies the folder to a new place, checks the copied database has every item, writes the pointer, deletes the old folder and exits with status 0. The app then restarts the backend at the new place. It first waits for writes already in flight (a screenshot being read, say). During the move other writes get 503, and MCP writes wait on the database lock. An MCP server that is already running sees the pointer change on its next message and reopens at the new folder.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
 
@@ -94,7 +94,7 @@ POST   /api/capture    {app?, meta?, display?, area?, profile?} -> {id}  screens
                                                                     last 10 minutes returns that id and saves nothing. Same for /api/clipboard and /api/import
 POST   /api/import     {path, app?, meta?, profile?}            -> {id}     an image file (png, jpeg, heic, gif, tiff, webp, read by content with sips -g format,
                                                                     not by extension) is converted to jpg and saved as a screenshot with OCR and a thumbnail.
-                                                                    Anything else, folders too, becomes a path item. 400 when path is not an absolute path
+                                                                    Anything else becomes a path item: folders, and images that are unreadable or broken. 400 when path is not an absolute path
                                                                     that exists (~/ is expanded). meta defaults to {source: "app"}, since the main window drops files
 POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
                                                                     copied files as one path item each, else text. 400 when empty, or when the
@@ -113,7 +113,7 @@ PATCH  /api/settings   {any Settings keys}               -> Settings  422 on a b
 GET    /api/storage                                      -> {path, bytes, kinds}   the data folder, its size and item count per kind
 POST   /api/storage/move {path}                          -> {path}   moves the data folder, then the backend exits and the app restarts it.
                                                                     path must be absolute, writable, not inside the current folder,
-                                                                    and empty or missing. 400 {detail} otherwise, 409 while recording.
+                                                                    and empty (a .DS_Store is fine) or missing. 400 {detail} otherwise, 409 while recording or moving.
                                                                     Every other write gets 503 during the move
 GET    /api/record                                       -> {on, seconds, transcribing}
 POST   /api/record/start {app?, meta?}                          -> same as GET /api/record. The voice item's app is empty when umm itself is in front
@@ -208,7 +208,7 @@ window.ummFolder?.(path)    reply to "chooseFolder", the absolute path of the pi
 
 ## Page URL
 
-When umm has the Accessibility permission, Swift reads the front app over the generic AX API as the hotbar opens, before it fetches the context. It takes the focused window's `AXDocument` (a file URL in editors, the page URL in Chrome). If that is empty, it walks up from the focused element to an `AXWebArea` and takes its `AXURL`. No per-app code. It sends the result as `GET /api/context?url=`, so `context.url` holds it. Swift adds it to the hotbar screenshot as `meta = {source: "hotbar", url}`, and the UI adds `meta.url` to notes and clipboard saves from the hotbar. Each AX call waits at most 0.5 seconds. Firefox shows no web area unless an assistive app is running, so it gets no URL. Without the permission, `url` is null and nothing else changes.
+When umm has the Accessibility permission, Swift reads the front app over the generic AX API as the hotbar opens, before it fetches the context. It takes the focused window's `AXDocument` (a file URL in editors, the page URL in Chrome). If that is empty, it walks up from the focused element to an `AXWebArea` and takes its `AXURL`. No per-app code. It sends the result as `GET /api/context?url=`, so `context.url` holds it. Swift adds it to the hotbar screenshot as `meta = {source: "hotbar", url}`, and the UI adds `meta.url` to notes and clipboard saves from the hotbar. Each AX call waits at most 0.5 seconds. A URL of 4000 characters or more, such as a `data:` URL, is left out, since the backend refuses a request line over 64 KB. Firefox shows no web area unless an assistive app is running, so it gets no URL. Without the permission, `url` is null and nothing else changes.
 
 ## OCR languages
 

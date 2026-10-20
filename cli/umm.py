@@ -11,7 +11,8 @@ VERSION = "0.1.0"
 KINDS = ["screenshot", "text", "path", "link", "voice"]
 ROOT = Path(os.environ.get("UMM_ROOT") or Path(__file__).resolve().parent.parent)
 BASE = Path.home() / "Library" / "Application Support" / "umm"  # socket, log and the location pointer, same as backend/db.py
-DATA = Path(os.environ.get("UMM_DATA") or ((BASE / "location").read_text().strip() if (BASE / "location").exists() else BASE))
+LOC = (BASE / "location").exists() and Path((BASE / "location").read_text().strip())
+DATA = Path(os.environ.get("UMM_DATA") or (LOC if LOC and LOC.is_absolute() and LOC.is_dir() else BASE))  # same rule as backend/db.py
 LOG = BASE / "umm.log"
 COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and os.environ.get("TERM") != "dumb"
 KIND_COLOR = {"screenshot": "36", "text": "0", "path": "32", "link": "34", "voice": "35"}

@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly
 
 import db
+import embed
 import record
 import settings
 
@@ -56,14 +57,22 @@ def one_line(r):  # a traceback is 10 KB of log for one error
 
 
 logging.getLogger("uvicorn.error").addFilter(one_line)
-moving = threading.Event()  # set while the data folder moves, writes are refused so none land in the old folder
+moving = threading.Lock()  # held while the data folder moves, writes are refused so none land in the old folder
+writes = 0  # writes in flight, a move waits for them before it copies
 
 
 @app.middleware("http")
 async def refuse_writes(request, call_next):
-    if moving.is_set() and request.method != "GET":
+    global writes
+    if request.method == "GET":
+        return await call_next(request)
+    if moving.locked():
         return JSONResponse({"detail": "umm is moving its data folder, try again in a moment"}, 503)
-    return await call_next(request)
+    writes += 1
+    try:
+        return await call_next(request)
+    finally:
+        writes -= 1
 
 
 class Item(BaseModel):
@@ -296,9 +305,10 @@ def import_file(i: Import):
     if not p.is_absolute() or not p.exists():
         raise HTTPException(400, f"no file at {i.path}")
     meta = i.meta or {"source": "app"}  # files are dropped on the main window
-    if p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition(" ")[2] in IMAGES:
-        name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
-        subprocess.run(["sips", "-s", "format", "jpeg", str(p), "--out", str(db.FILES / name)], capture_output=True, check=True)
+    name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
+    # sips prints only the path for a non-image, so "a png" must not count. An unreadable or broken image is saved as a path
+    if (p.is_file() and run(["sips", "-g", "format", str(p)]).rpartition("format: ")[2] in IMAGES
+            and subprocess.run(["sips", "-s", "format", "jpeg", str(p), "--out", str(db.FILES / name)], capture_output=True).returncode == 0):
         return {"id": save_shot(name, i.app, meta, i.profile)}
     return {"id": db.add(str(p), "path", app=i.app, profile=i.profile, meta=meta)}
 
@@ -350,15 +360,20 @@ def move_storage(f: Folder):
         raise HTTPException(400, f"can't create {new}: {e.strerror}")
     if not os.access(new, os.W_OK):
         raise HTTPException(400, f"{new} is not writable")
-    if set(os.listdir(new)) - db.KEEP:
+    if set(os.listdir(new)) - db.KEEP - {".DS_Store"}:  # Finder leaves one in a folder it showed
         raise HTTPException(400, f"{new} is not empty")
-    moving.set()
+    if not moving.acquire(blocking=False):  # a second move would wait on the first forever
+        raise HTTPException(409, "the data folder is already moving")
+    while writes > 1:  # this request is one
+        time.sleep(0.05)
+    if embed.proc:  # its first-run model download would go on into the old folder after the delete
+        embed.proc.kill()
     try:
         shutil.copytree(old, new, dirs_exist_ok=True, ignore=lambda d, names: db.KEEP | {"umm.db", "umm.db-wal", "umm.db-shm"} if d == str(old) else ())
         db.copy_to(new)
     except (OSError, sqlite3.Error) as e:
         clear(new)
-        moving.clear()
+        moving.release()
         raise HTTPException(500, f"the move failed and nothing changed: {e}")
     logging.getLogger("uvicorn.error").info(f"moved the data folder from {old} to {new}")
     try:
