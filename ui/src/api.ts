@@ -4,7 +4,7 @@ export type Meta = { agent?: string; agent_version?: string; cwd?: string; sessi
 export type Item = { id: number; profile: string; kind: Kind; content: string; file: string | null; app: string | null; meta?: Meta | null; created_at: string }
 export type Rec = { on: boolean; seconds: number; transcribing: number }
 export type Profiles = { active: string; all: { name: string; count: number }[] }
-export type Ctx = { app: string; profile: string; clipboard: string; recording: Rec }
+export type Ctx = { app: string; profile: string; clipboard: string; clipboard_kind: 'text' | 'image' | 'files' | null; recording: Rec }
 export type Settings = { languages: string[]; model: 'small' | 'medium'; enrich_links: boolean; excluded_apps: string[] }
 export type Storage = { path: string; bytes: number; kinds: Partial<Record<Kind, number>> }
 type Params = Record<string, string | number | undefined>
@@ -16,6 +16,7 @@ const call = <T = object>(path: string, method = 'GET', body?: object): Promise<
 const qs = (p: Params) => new URLSearchParams(Object.entries(p).filter(([, v]) => v !== undefined && v !== '') as [string, string][]).toString()
 
 export const fileUrl = (name: string) => '/api/files/' + name.split('/').map(encodeURIComponent).join('/')
+export const thumbUrl = (name: string) => '/api/thumb/' + encodeURIComponent(name)
 
 export const api = {
   items: (p: Params) => call<Item[]>('items?' + qs(p)),
@@ -23,7 +24,8 @@ export const api = {
   add: (content: string, app?: string) => call<{ id: number }>('items', 'POST', { content, app }),
   edit: (id: number, patch: { content?: string; profile?: string }) => call('items/' + id, 'PATCH', patch),
   del: (id: number) => call('items/' + id, 'DELETE'),
-  capture: (app?: string) => call('capture', 'POST', { app }),
+  capture: (app?: string, area?: boolean) => call('capture', 'POST', { app, area }),
+  saveClipboard: (app?: string) => call('clipboard', 'POST', { app }),
   context: () => call<Ctx>('context'),
   profiles: () => call<Profiles>('profiles'),
   setProfile: (name: string) => call('profiles', 'POST', { name }),

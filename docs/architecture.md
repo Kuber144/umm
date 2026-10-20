@@ -24,7 +24,7 @@ ui/ (React + Vite)
 - `backend/` Python.
 - `ui/` React.
 - `assets/` icon source (`icon.svg`).
-- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg`, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`.
+- `data/` runtime only: `umm.db`, `files/` (screenshots `.jpg` with a `.thumb.jpg` next to each, recordings `.m4a`), `profile.txt`, `profiles.txt` (created profile names), `settings.json` (only what the person changed), `umm.log`, `umm.sock`.
 - `start.sh` builds what's missing and opens `build/umm.app`. `stop.sh` quits it. `build.sh` skips the app build when nothing in `app/` is newer than the binary, and signs ad hoc, so permissions may be asked again after a rebuild.
 
 The app has no Dock icon (accessory mode) except while the main window is open. The menu bar item has "Open umm" and "Quit umm".
@@ -45,7 +45,7 @@ All JSON. Paths are the same over the socket and in the Vite dev proxy.
 ```
 Item = {id, profile, kind, content, file, app, meta, created_at}
 kind: screenshot | text | path | link | voice
-file: name under /api/files/ (screenshot jpg or voice m4a), else null
+file: name under /api/files/ (screenshot jpg or voice m4a), else null. Screenshots also have /api/thumb/{file}, 640px wide
 app:  "App: window title" of the app the user was in. For MCP saves: "<agent name>: <project folder name>"
 meta: JSON object or null. Every save sets meta.source: hotbar | app (main window) | cli | mcp.
       The CLI also sets cwd. MCP saves set {source: "mcp", agent, agent_version, cwd, session}: the client name and version
@@ -60,8 +60,14 @@ GET    /api/apps?profile=                                -> [{app, count}]   app
 POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?, meta?}                            -> {id}     screenshot + OCR, takes ~1s. 403 when the app is in excluded_apps
-GET    /api/context                                      -> {app, profile, clipboard, recording}
+POST   /api/capture    {app?, meta?, display?, area?}    -> {id}     screenshot + OCR + thumbnail, takes ~1s. 403 when the app is in excluded_apps
+                                                                    display: 1-based number for screencapture -D, default main display
+                                                                    area: true runs the interactive selection. Esc returns {id: null} and saves nothing
+POST   /api/clipboard  {app?, meta?}                          -> {ids}    saves what the clipboard holds: image as a screenshot with OCR,
+                                                                    copied files as one path item each, else text. 400 when empty
+GET    /api/context                                      -> {app, profile, clipboard_kind, clipboard, recording}
+                                                                    clipboard_kind: text | image | files | null. clipboard is the text, or the
+                                                                    copied paths one per line, empty for an image. Max 2000 chars
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
 POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent
@@ -78,6 +84,7 @@ GET    /api/agents                                       -> [{agent, agent_versi
          connected MCP servers. Each writes data/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
          memories = items with that session. Sorted by last_seen, files of dead pids are removed after 30 days.
 GET    /api/files/{name}                                 -> file
+GET    /api/thumb/{name}                                 -> jpg      thumbnail of a screenshot, made on first request for old ones
 ```
 
 Settings live in `data/settings.json`. The defaults are the `Settings` model in `backend/settings.py`, the only place they are written. `settings.get()` reads the file on every call, so `record.py` and `api.py` pick up a change without a restart.
@@ -115,8 +122,9 @@ UI to Swift: `window.webkit.messageHandlers.umm.postMessage(msg)`. When that obj
 {type: "hide"}                     close the hotbar, focus returns to the previous app
 {type: "saved"}                    close the hotbar and play the "saved" sound (UI already did the fetch)
 {type: "error"}                    play the error sound
-{type: "capture"}                  close the hotbar, wait 250ms, POST /api/capture with the app from context, play sound
-                                   fallback: fetch POST /api/capture
+{type: "capture"}                  close the hotbar, wait 250ms, POST /api/capture with the app from context and the
+                                   display under the mouse, play sound. fallback: fetch POST /api/capture
+{type: "area"}                     same, with area: true. No sound when the selection is cancelled
 {type: "openMain", query?}         close the hotbar, show the main window, then call window.ummOpen?.({query})
                                    fallback: location.hash = ""
 {type: "recording", on}            update the status bar item (red while recording)
@@ -145,13 +153,14 @@ window.ummSettings?.({loginItem, version})
 Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot (top row), so `Ctrl+Shift+Space` then `Enter` is the fast path, also with Ctrl and Shift still held. Rows:
 
 1. Screenshot
-2. Save clipboard (shows a preview, hidden when the clipboard is empty)
-3. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
-4. Start recording / Stop recording (shows elapsed time while on)
-5. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes
-6. Switch profile
-7. Open umm (main window)
-8. Quit umm
+2. Screenshot an area
+3. Save clipboard (text preview, "Save clipboard image" or "Save N copied files", hidden when the clipboard is empty)
+4. Note: opens a multi-line editor in the hotbar. `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back
+5. Start recording / Stop recording (shows elapsed time while on)
+6. Search memories: typing filters the rows and shows matching memories below them. Links show their title and site icon. `Enter` on a memory copies it (path, link or text) and closes
+7. Switch profile
+8. Open umm (main window)
+9. Quit umm
 
 ## Settings view
 

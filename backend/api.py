@@ -7,8 +7,12 @@ from pathlib import Path
 from typing import Annotated
 
 import objc
+from AppKit import (NSBitmapImageFileTypeJPEG, NSBitmapImageRep, NSImageCompressionFactor, NSPasteboard, NSPasteboardTypePNG,
+                    NSPasteboardTypeTIFF, NSPasteboardURLReadingFileURLsOnlyKey)
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from Foundation import NSURL
 from ocrmac.ocrmac import OCR
 from pydantic import BaseModel, Field, StringConstraints
 from Quartz import CGWindowListCopyWindowInfo, kCGNullWindowID, kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly
@@ -44,6 +48,11 @@ class Text(BaseModel):
 class App(BaseModel):
     app: str | None = None
     meta: dict | None = None
+
+
+class Shot(App):
+    display: int | None = None  # 1-based, as in screencapture -D. Omitted means the main display.
+    area: bool = False  # interactive region selection
 
 
 class Profile(BaseModel):
@@ -97,24 +106,81 @@ def delete(id: int):
     return {}
 
 
+def clipboard():
+    """(kind, value): files -> list of paths, image -> None, text -> str. (None, "") when empty. Files win over image, since Finder adds an icon."""
+    with objc.autorelease_pool():
+        pb = NSPasteboard.generalPasteboard()
+        urls = pb.readObjectsForClasses_options_([NSURL], {NSPasteboardURLReadingFileURLsOnlyKey: True})
+        if urls:
+            return "files", [str(u.path()) for u in urls]
+        if {NSPasteboardTypePNG, NSPasteboardTypeTIFF} & set(pb.types() or []):
+            return "image", None
+    text = run("pbpaste")
+    return ("text", text) if text.strip() else (None, "")
+
+
 @app.get("/api/context")
 def context():
-    return {"app": front_window(), "profile": db.active_profile(), "clipboard": run("pbpaste")[:2000],
-            "recording": record.status()}
+    kind, value = clipboard()
+    return {"app": front_window(), "profile": db.active_profile(), "clipboard_kind": kind,
+            "clipboard": ("\n".join(value) if kind == "files" else value or "")[:2000], "recording": record.status()}
+
+
+def save_shot(name, app_name, meta=None):
+    """OCR and thumbnail the screenshot already written to FILES/name, then save it."""
+    # worker threads have no autorelease pool, so Vision objects would leak without one
+    with objc.autorelease_pool():
+        text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
+    thumb(name)
+    return db.add(text, "screenshot", name, app_name, meta=meta)
+
+
+def thumb(name):
+    """Small copy of a screenshot next to it. Old screenshots get one on first request."""
+    t = db.thumb(name)
+    if not t.exists():
+        subprocess.run(["sips", "-Z", "640", str(db.FILES / name), "--out", str(t)], capture_output=True, check=True)
+    return t
+
+
+@app.get("/api/thumb/{name}")
+def get_thumb(name: str):
+    if not name.endswith(".jpg") or not (db.FILES / Path(name).name).is_file():
+        raise HTTPException(404)
+    return FileResponse(thumb(Path(name).name))
 
 
 @app.post("/api/capture")
-def capture(a: App | None = None):
-    app_name = (a and a.app) or front_window()
+def capture(a: Shot | None = None):
+    a = a or Shot()
+    app_name = a.app or front_window()
     if app_name.split(":")[0].strip().lower() in {x.strip().lower() for x in settings.get()["excluded_apps"]}:
         raise HTTPException(403, f"{app_name.split(':')[0]} is in your excluded apps, nothing was captured")
     # jpg is ~9x smaller than png and OCR reads the same text. Microseconds keep parallel captures from sharing a file.
     name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
-    subprocess.run(["screencapture", "-x", "-t", "jpg", str(db.FILES / name)], check=True)
-    # worker threads have no autorelease pool, so Vision objects would leak without one
-    with objc.autorelease_pool():
-        text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
-    return {"id": db.add(text, "screenshot", name, app_name, meta=a and a.meta)}
+    flags = ["-i"] if a.area else ["-D", str(a.display)] if a.display else []
+    subprocess.run(["screencapture", "-x", *flags, "-t", "jpg", str(db.FILES / name)], check=True)
+    if a.area and not (db.FILES / name).exists():  # Esc during selection
+        return {"id": None}
+    return {"id": save_shot(name, app_name, a.meta)}
+
+
+@app.post("/api/clipboard")
+def save_clipboard(a: App | None = None):
+    app_name = (a and a.app) or front_window()
+    kind, value = clipboard()
+    if kind == "files":
+        return {"ids": [db.add(p, "path", app=app_name, meta=a and a.meta) for p in value]}
+    if kind == "image":
+        name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".jpg"
+        with objc.autorelease_pool():
+            pb = NSPasteboard.generalPasteboard()
+            rep = NSBitmapImageRep.imageRepWithData_(pb.dataForType_(NSPasteboardTypePNG) or pb.dataForType_(NSPasteboardTypeTIFF))
+            rep.representationUsingType_properties_(NSBitmapImageFileTypeJPEG, {NSImageCompressionFactor: 0.8}).writeToFile_atomically_(str(db.FILES / name), True)
+        return {"ids": [save_shot(name, app_name, a and a.meta)]}
+    if kind == "text":
+        return {"ids": [db.add(value, app=app_name, meta=a and a.meta)]}
+    raise HTTPException(400, "clipboard is empty")
 
 
 @app.get("/api/settings")

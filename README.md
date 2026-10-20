@@ -26,7 +26,7 @@ The app is signed ad hoc, so macOS treats every rebuild as a new app and may ask
 
 - Type to filter the rows and see matching memories below them. `Enter` on a memory copies it.
 - Up and Down pick a row. `Enter` runs it.
-- Rows: screenshot, save clipboard, write a note, start or stop recording, search, switch profile, open umm, quit.
+- Rows: screenshot, screenshot an area, save clipboard (text, an image or copied files), write a note, start or stop recording, search, switch profile, open umm, quit.
 - In the note editor `Enter` is a new line, `Cmd+Enter` saves, `Esc` goes back.
 - `Esc` closes the hotbar. A pop sound means it saved, a low thud means it failed.
 

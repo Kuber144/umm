@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { fileUrl, type Item, type LinkInfo } from './api'
+import { fileUrl, thumbUrl, type Item, type LinkInfo } from './api'
 import { send } from './bridge'
 import { Dot, Icon, ago, hl, when } from './ui'
 
@@ -125,7 +125,7 @@ export function Row({ it, q, sel, all, profiles, act, onSelect }: {
         ) : it.kind === 'screenshot' ? (
           <div className="shot">
             <button className="thumb" onClick={() => act.zoom(it)} aria-label="Open screenshot">
-              <img loading="lazy" src={fileUrl(it.file!)} alt="" />
+              <img loading="lazy" src={thumbUrl(it.file!)} alt="" />
             </button>
             <div className="cap">
               <b>{hl(winTitle(it.app) || appName(it.app) || 'Screenshot', q)}</b>
