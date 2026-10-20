@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 DATA = Path(__file__).resolve().parent.parent / "data"
@@ -147,3 +148,22 @@ def delete(id):
 def get(id):
     r = db.execute(f"SELECT {COLS} FROM items WHERE rowid = ?", (id,)).fetchone()
     return row(r) if r else None
+
+
+def agents():
+    """Connected MCP servers, from the files they write to data/agents. Dead ones are dropped after 30 days."""
+    counts = dict(db.execute("SELECT json_extract(meta, '$.session'), count(*) FROM items GROUP BY 1").fetchall())
+    out = []
+    for f in (DATA / "agents").glob("*.json"):
+        a = json.loads(f.read_text())
+        try:
+            os.kill(a["pid"], 0)
+            a["connected"] = True
+        except ProcessLookupError:
+            a["connected"] = False
+            if time.time() - f.stat().st_mtime > 30 * 86400:
+                f.unlink()
+                continue
+        a["memories"] = counts.get(a["session"], 0)
+        out.append(a)
+    return sorted(out, key=lambda a: a["last_seen"], reverse=True)

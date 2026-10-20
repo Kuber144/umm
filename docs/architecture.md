@@ -48,7 +48,7 @@ kind: screenshot | text | path | link | voice
 file: name under /api/files/ (screenshot jpg or voice m4a), else null
 app:  "App: window title" of the app the user was in. For MCP saves: "<agent name>: <project folder name>"
 meta: JSON object or null. Every save sets meta.source: hotbar | app (main window) | cli | mcp.
-      The CLI also sets cwd. MCP saves set {agent, agent_version, cwd, session}: the client name and version
+      The CLI also sets cwd. MCP saves set {source: "mcp", agent, agent_version, cwd, session}: the client name and version
       from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
@@ -70,6 +70,9 @@ POST   /api/record/start {app?, meta?}                          -> same as GET /
 POST   /api/record/stop                                  -> same, transcription runs in background and the voice item appears when done
 POST   /api/copy       {text}                            -> {}       puts text on the clipboard
 POST   /api/reveal     {text}                            -> {}       reveals a path in Finder
+GET    /api/agents                                       -> [{agent, agent_version, cwd, session, pid, started, last_seen, connected, memories}]
+         connected MCP servers. Each writes data/agents/<session>.json and deletes it on clean exit. connected = pid is alive,
+         memories = items with that session. Sorted by last_seen, files of dead pids are removed after 30 days.
 GET    /api/files/{name}                                 -> file
 ```
 

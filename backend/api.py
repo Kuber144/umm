@@ -171,6 +171,11 @@ def reveal(t: Text):
     return {}
 
 
+@app.get("/api/agents")
+def agents():
+    return db.agents()
+
+
 mimetypes.add_type("audio/mp4", ".m4a")  # the default audio/mp4a-latm is not playable in WebKit
 app.mount("/api/files", StaticFiles(directory=db.FILES))
 dist = Path(__file__).resolve().parent.parent / "ui" / "dist"

@@ -1,8 +1,14 @@
+import atexit
+import http.client
+import json
 import os
+import signal
+import socket
 import uuid
+from datetime import datetime
 from typing import Annotated, Literal
 
-from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
@@ -16,12 +22,42 @@ Search first. Call search_memory before asking the user where a file or folder i
 Remember durable facts worth keeping across sessions: preferences, decisions, project paths, how things are set up. Use remember, which saves to `agent`. Do not save secrets or passing details. Search before saving. If a memory already covers the fact, fix it with update_memory instead of adding a near-duplicate, and forget it when it is wrong.
 Saves record which agent and folder they came from. Filter with `agent`, `project` (a folder and its subfolders) or `here` (the folder you run in) to find what an agent said in one project.
 
+When the user says "look at my screen" or asks you to save what they see, call capture_screenshot. It takes a full-screen screenshot with OCR and needs the umm app running. You cannot record audio or change the user's active profile.
 Never change or delete the user's items. update_memory and forget only touch `agent` unless the user asked you to change a specific item."""
 PREVIEW = 500
 CWD = os.getcwd()  # the folder the agent started this server in
 SESSION = os.environ.get("CLAUDE_CODE_SESSION_ID") or uuid.uuid4().hex[:8]  # one id per server process
 
-mcp = MCPServer("umm", instructions=INSTRUCTIONS)
+STARTED = datetime.now().isoformat(timespec="seconds")
+CLIENT = {}  # agent name and version, set once the client has said hello
+AGENT_FILE = db.DATA / "agents" / f"{SESSION}.json"  # lets the app list connected agents
+
+
+def meta():
+    return {"source": "mcp", "agent": CLIENT.get("agent", "unknown"), "agent_version": CLIENT.get("agent_version"),
+            "cwd": CWD, "session": SESSION}
+
+
+def bye():
+    if AGENT_FILE.exists() and json.loads(AGENT_FILE.read_text()).get("pid") == os.getpid():
+        AGENT_FILE.unlink()
+
+
+async def track(ctx, call_next):
+    """Runs on every message. Writes this server's connection file and bumps last_seen."""
+    result = await call_next(ctx)
+    c = ctx.session.client_params
+    if c:
+        CLIENT.update(agent=c.client_info.name, agent_version=c.client_info.version)
+        AGENT_FILE.parent.mkdir(exist_ok=True)
+        tmp = AGENT_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({**meta(), "pid": os.getpid(), "started": STARTED,
+                                   "last_seen": datetime.now().isoformat(timespec="seconds")}))
+        tmp.replace(AGENT_FILE)
+    return result
+
+
+mcp = MCPServer("umm", instructions=INSTRUCTIONS, middleware=[track])
 
 
 def item(r, full=False):
@@ -30,6 +66,34 @@ def item(r, full=False):
     if not full and len(r["content"]) > PREVIEW:
         r["content"], r["truncated"] = r["content"][:PREVIEW] + "...", True
     return r
+
+
+def pname(profile):
+    profile = profile.strip() or "agent"
+    if profile == "*":
+        raise ToolError('"*" means all profiles and can\'t be a profile name')
+    return profile
+
+
+class Sock(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.settimeout(30)
+        self.sock.connect(str(db.DATA / "umm.sock"))
+
+
+def api(method, path, body):
+    """Call the running app's backend over its Unix socket."""
+    try:
+        c = Sock("umm")
+        c.request(method, path, json.dumps(body), {"Content-Type": "application/json"})
+        r = c.getresponse()
+        data = r.read()
+    except OSError as e:
+        raise ToolError(f"the umm app is not running (or not reachable): {e}. Ask the user to open it") from e
+    if r.status >= 400:
+        raise ToolError(f"umm backend error {r.status}, see data/umm.log. Screenshots fail when umm.app lacks Screen Recording permission")
+    return json.loads(data)
 
 
 def own(id, allow_any):
@@ -76,19 +140,14 @@ def get_memory(id: int) -> dict:
 
 
 @mcp.tool()
-def remember(content: Annotated[str, Field(description="A note, folder path or link. Multi-line is fine.")], ctx: Context, profile: str = "agent") -> int:
+def remember(content: Annotated[str, Field(description="A note, folder path or link. Multi-line is fine.")], profile: str = "agent") -> int:
     """Save a durable note, folder path or link to memory. Returns the new id.
     Saves to the `agent` profile by default. Pass another profile name only if the user asked for it.
     Search first and use update_memory if the fact is already saved."""
-    profile = profile.strip() or "agent"
     if not content.strip():
         raise ToolError("content is empty")
-    if profile == "*":
-        raise ToolError('"*" means all profiles and can\'t be a profile name')
-    c = ctx.request_context.session.client_params
-    name = c.client_info.name if c else "agent"
-    meta = {"agent": name, "agent_version": c.client_info.version if c else None, "cwd": CWD, "session": SESSION}
-    return db.add(content.strip(), app=f"{name}: {os.path.basename(CWD)}", profile=profile, meta=meta)
+    profile = pname(profile)
+    return db.add(content.strip(), app=f"{CLIENT.get('agent', 'unknown')}: {os.path.basename(CWD)}", profile=profile, meta=meta())
 
 
 @mcp.tool()
@@ -111,6 +170,17 @@ def forget(id: int, allow_any: Annotated[bool, Field(description="Set true only 
 
 
 @mcp.tool()
+def capture_screenshot(profile: Annotated[str, Field(description="Profile to save into. Default is `agent`.")] = "agent") -> dict:
+    """Take a full-screen screenshot of what the user sees now, run OCR and save it. Takes about a second.
+    Returns the item: `content` is the OCR text and `file` is the absolute image path to open.
+    Needs the umm app running, else it errors. Use it when the user asks you to look at their screen."""
+    profile = pname(profile)
+    id = api("POST", "/api/capture", {"app": f"{CLIENT.get('agent', 'unknown')}: {os.path.basename(CWD)}", "meta": meta()})["id"]
+    api("PATCH", f"/api/items/{id}", {"profile": profile})
+    return item(db.get(id))
+
+
+@mcp.tool()
 def list_profiles() -> list[dict]:
     """List profiles with item counts. `user` is the person's own saves, `agent` is yours."""
     return db.profiles()
@@ -123,4 +193,7 @@ def list_apps(profile: str = "*") -> list[dict]:
 
 
 if __name__ == "__main__":
+    atexit.register(bye)
+    for sig in (signal.SIGINT, signal.SIGTERM):  # a blocked stdin thread would delay a normal exit
+        signal.signal(sig, lambda *_: (bye(), os._exit(0)))
     mcp.run()
