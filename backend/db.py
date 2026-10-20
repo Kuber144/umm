@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 from pathlib import Path
@@ -12,9 +13,26 @@ BUILTIN = ["user", "agent"]
 # sqlite3.threadsafety is 3 (serialized), so one connection is shared by API threads and the transcriber
 db = sqlite3.connect(DATA / "umm.db", check_same_thread=False)
 db.row_factory = sqlite3.Row
-db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS items USING fts5("
-           "profile UNINDEXED, kind UNINDEXED, content, file UNINDEXED, app, created_at UNINDEXED)")
-COLS = "rowid AS id, profile, kind, content, file, app, created_at"
+SCHEMA = "profile UNINDEXED, kind UNINDEXED, content, file UNINDEXED, app, meta UNINDEXED, created_at UNINDEXED"
+if db.execute("SELECT 1 FROM pragma_table_info('items') WHERE name = 'meta'").fetchone() is None:
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name = 'items'").fetchone():  # old table without meta
+        db.backup(sqlite3.connect(DATA / "umm.db.bak"))
+        db.execute("BEGIN")
+        db.execute(f"CREATE VIRTUAL TABLE items_new USING fts5({SCHEMA})")
+        db.execute("INSERT INTO items_new(rowid, profile, kind, content, file, app, created_at) "
+                   "SELECT rowid, profile, kind, content, file, app, created_at FROM items")
+        db.execute("DROP TABLE items")
+        db.execute("ALTER TABLE items_new RENAME TO items")
+        db.commit()
+    else:
+        db.execute(f"CREATE VIRTUAL TABLE items USING fts5({SCHEMA})")
+COLS = "rowid AS id, profile, kind, content, file, app, meta, created_at"
+
+
+def row(r):
+    d = dict(r)
+    d["meta"] = json.loads(d["meta"]) if d["meta"] else None
+    return d
 
 
 def active_profile():
@@ -61,9 +79,10 @@ def detect(content):
     return "text"
 
 
-def add(content, kind=None, file=None, app=None, profile=None):
-    cur = db.execute("INSERT INTO items VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))",
-                     (profile or active_profile(), kind or detect(content), content, file, app))
+def add(content, kind=None, file=None, app=None, profile=None, meta=None):
+    cur = db.execute("INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
+                     (profile or active_profile(), kind or detect(content), content, file, app,
+                      json.dumps(meta) if meta else None))
     db.commit()
     return cur.lastrowid
 
@@ -81,8 +100,10 @@ def update(id, content=None, profile=None):
 APP = "substr(app, 1, instr(app || ':', ':') - 1)"  # app name is the part before ':'
 
 
-def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=None, until=None, sort=None):
-    """profile None or '*' searches every profile. kind is comma separated. since/until are YYYY-MM-DD."""
+def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=None, until=None, sort=None,
+           agent=None, project=None):
+    """profile None or '*' searches every profile. kind is comma separated. since/until are YYYY-MM-DD.
+    agent matches meta.agent. project matches meta.cwd, that folder or any folder under it."""
     where, args = [], []
     words = q.replace('"', "").split()
     if words:
@@ -94,12 +115,19 @@ def search(q="", profile=None, kind=None, limit=50, offset=0, app=None, since=No
         if val:
             where.append(cond)
             args.append(val)
+    if agent:
+        where.append("json_extract(meta, '$.agent') = ?")
+        args.append(agent)
+    if project:
+        project = project.rstrip("/") or "/"
+        where.append("(json_extract(meta, '$.cwd') = ? OR substr(json_extract(meta, '$.cwd'), 1, length(?) + 1) = ? || '/')")
+        args += [project] * 3
     if kind:
         where.append(f"kind IN ({','.join('?' * len(kind.split(',')))})")
         args += kind.split(",")
     order = {"old": "rowid", "new": "rowid DESC"}.get(sort) or ("rank, rowid DESC" if words else "rowid DESC")
     sql = f"SELECT {COLS} FROM items {'WHERE ' + ' AND '.join(where) if where else ''} ORDER BY {order} LIMIT ? OFFSET ?"
-    return [dict(r) for r in db.execute(sql, (*args, limit, offset))]
+    return [row(r) for r in db.execute(sql, (*args, limit, offset))]
 
 
 def apps(profile=None):
@@ -117,5 +145,5 @@ def delete(id):
 
 
 def get(id):
-    row = db.execute(f"SELECT {COLS} FROM items WHERE rowid = ?", (id,)).fetchone()
-    return dict(row) if row else None
+    r = db.execute(f"SELECT {COLS} FROM items WHERE rowid = ?", (id,)).fetchone()
+    return row(r) if r else None

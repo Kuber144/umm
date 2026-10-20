@@ -51,10 +51,10 @@ Every item belongs to one profile, and new saves go to the active one.
 ## Claude Code
 
 ```
-claude mcp add umm -s user -- uv --directory /Users/kuberjain/Developer/personal/umm/backend run mcp_server.py
+claude mcp add umm -s user -- uv run --project /Users/kuberjain/Developer/personal/umm/backend /Users/kuberjain/Developer/personal/umm/backend/mcp_server.py
 ```
 
-Tools are `search_memory`, `remember` and `list_profiles`. `remember` saves to the `agent` profile unless you pass another. Screenshot results include an image path the agent can open.
+Any MCP client (Claude Code, Codex, Cursor) can use it, and they all share one memory. `remember` saves to the `agent` profile and records which agent saved it, the project folder it ran in and the session. Agents can search by agent and project, update a memory instead of saving a copy, and only delete from `agent`. See `docs/mcp.md` for the tools.
 
 ## Voice
 
