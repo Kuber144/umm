@@ -47,7 +47,8 @@ Item = {id, profile, kind, content, file, app, meta, created_at}
 kind: screenshot | text | path | link | voice
 file: name under /api/files/ (screenshot jpg or voice m4a), else null
 app:  "App: window title" of the app the user was in. For MCP saves: "<agent name>: <project folder name>"
-meta: JSON object or null. MCP saves set {agent, agent_version, cwd, session}: the client name and version
+meta: JSON object or null. Every save sets meta.source: hotbar | app (main window) | cli | mcp.
+      The CLI also sets cwd. MCP saves set {agent, agent_version, cwd, session}: the client name and version
       from the MCP handshake, the folder the agent runs in, and an id per MCP server process (one per agent session)
 
 GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -> [Item]
@@ -55,17 +56,17 @@ GET    /api/items?q=&profile=&kind=&app=&since=&until=&sort=&limit=50&offset=0 -
          app filters by app name (the part before ":"). since/until are YYYY-MM-DD, inclusive.
          sort: new | old | relevance. Default is relevance when q is set, else new. limit is capped at 200.
 GET    /api/apps?profile=                                -> [{app, count}]   app names for the filter, most used first
-POST   /api/items      {content, app?, profile?}         -> {id}     kind auto detected, multi-line ok
+POST   /api/items      {content, app?, profile?, meta?}         -> {id}     kind auto detected, multi-line ok
 PATCH  /api/items/{id} {content?, profile?}              -> {}       edit text and/or move to another profile
 DELETE /api/items/{id}                                   -> {}       also deletes the file
-POST   /api/capture    {app?}                            -> {id}     screenshot + OCR, takes ~1s
+POST   /api/capture    {app?, meta?}                            -> {id}     screenshot + OCR, takes ~1s
 GET    /api/context                                      -> {app, profile, clipboard, recording}
 GET    /api/profiles                                     -> {active, all: [{name, count}]}   always includes user and agent
 POST   /api/profiles   {name}                            -> {}       sets active, creates if new
 POST   /api/profiles/rename {from, to}                   -> {}       not for user or agent
 DELETE /api/profiles/{name}                              -> {}       deletes its items and files, not for user or agent
 GET    /api/record                                       -> {on, seconds, transcribing}
-POST   /api/record/start {app?}                          -> same as GET /api/record
+POST   /api/record/start {app?, meta?}                          -> same as GET /api/record
 POST   /api/record/stop                                  -> same, transcription runs in background and the voice item appears when done
 POST   /api/copy       {text}                            -> {}       puts text on the clipboard
 POST   /api/reveal     {text}                            -> {}       reveals a path in Finder

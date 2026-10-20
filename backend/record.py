@@ -15,7 +15,7 @@ MODEL = "medium"  # faster-whisper size, multilingual, runs in a child process o
 # so detection only picks the likeliest of these. An empty list allows any language
 LANGUAGES = ["en", "hi"]
 lock = threading.Lock()
-state = {"stream": None, "queue": None, "writer": None, "name": None, "start": 0, "app": None, "profile": None, "transcribing": 0}
+state = {"stream": None, "queue": None, "writer": None, "name": None, "start": 0, "app": None, "meta": None, "profile": None, "transcribing": 0}
 
 
 def writer(f, q):
@@ -25,7 +25,7 @@ def writer(f, q):
     f.close()
 
 
-def start(app=None):
+def start(app=None, meta=None):
     with lock:
         if state["stream"]:
             return
@@ -42,7 +42,7 @@ def start(app=None):
             (db.FILES / name).unlink()
             raise
         w.start()
-        state.update(stream=stream, queue=q, writer=w, name=name, start=time.time(), app=app, profile=db.active_profile())
+        state.update(stream=stream, queue=q, writer=w, name=name, start=time.time(), app=app, meta=meta, profile=db.active_profile())
 
 
 def stop():
@@ -53,7 +53,7 @@ def stop():
         state["stream"].close()
         state["queue"].put(None)
         state["writer"].join()
-        args = (state["name"], state["app"], state["profile"])
+        args = (state["name"], state["app"], state["profile"], state["meta"])
         state.update(stream=None)
         state["transcribing"] += 1
     threading.Thread(target=transcribe, args=args, daemon=True).start()
@@ -73,7 +73,7 @@ def whisper(path):
     return text + "\n\nEnglish: " + " ".join(s.text.strip() for s in segments)
 
 
-def transcribe(name, app, profile):
+def transcribe(name, app, profile, meta=None):
     try:
         # a child process gives the model's ~500 MB back to the OS on exit, gc alone does not
         p = subprocess.run([sys.executable, __file__, str(db.FILES / name)], capture_output=True, text=True)
@@ -83,7 +83,7 @@ def transcribe(name, app, profile):
         if subprocess.run(["afconvert", "-f", "m4af", "-d", "aac", "-b", "32000", str(db.FILES / name), str(db.FILES / m4a)]).returncode == 0:
             (db.FILES / name).unlink()
             name = m4a
-        db.add(text, "voice", name, app, profile)
+        db.add(text, "voice", name, app, profile, meta)
     finally:
         with lock:
             state["transcribing"] -= 1

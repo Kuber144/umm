@@ -25,6 +25,7 @@ ProfileName = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 class Item(BaseModel):
     content: Nonempty
     app: str | None = None
+    meta: dict | None = None
     profile: str | None = None
 
 
@@ -39,6 +40,7 @@ class Text(BaseModel):
 
 class App(BaseModel):
     app: str | None = None
+    meta: dict | None = None
 
 
 class Profile(BaseModel):
@@ -77,7 +79,7 @@ def apps(profile: str = ""):
 
 @app.post("/api/items")
 def add(item: Item):
-    return {"id": db.add(item.content, app=item.app, profile=item.profile)}
+    return {"id": db.add(item.content, app=item.app, profile=item.profile, meta=item.meta)}
 
 
 @app.patch("/api/items/{id}")
@@ -107,7 +109,7 @@ def capture(a: App | None = None):
     # worker threads have no autorelease pool, so Vision objects would leak without one
     with objc.autorelease_pool():
         text = "\n".join(t for t, _, _ in OCR(str(db.FILES / name)).recognize())
-    return {"id": db.add(text, "screenshot", name, app_name)}
+    return {"id": db.add(text, "screenshot", name, app_name, meta=a and a.meta)}
 
 
 @app.get("/api/profiles")
@@ -147,7 +149,7 @@ def record_status():
 
 @app.post("/api/record/start")
 def record_start(a: App | None = None):
-    record.start((a and a.app) or front_window())
+    record.start((a and a.app) or front_window(), a and a.meta)
     return record.status()
 
 
