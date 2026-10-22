@@ -6,7 +6,8 @@ import icon from '../../assets/icon.svg'
 import './settings.css'
 
 const LANGS: [string, string][] = [['en', 'English'], ['hi', 'Hindi'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'], ['pt', 'Portuguese'], ['ar', 'Arabic'], ['zh', 'Chinese'], ['ja', 'Japanese'], ['ru', 'Russian']]
-const MODELS = { small: 'Faster, lighter, misses more words.', medium: 'More accurate. Uses about 2 GB while it runs.' }
+const HOTKEYS: Record<string, string> = { 'option+space': 'Option Space', 'ctrl+shift+space': 'Ctrl Shift Space', 'ctrl+option+space': 'Ctrl Option Space' }
+const MODELS ={ small: 'Faster, lighter, misses more words.', medium: 'More accurate. Uses about 2 GB while it runs.' }
 const DAYS: [number, string][] = [[0, 'Forever'], [7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']]
 const KIND_NAMES = { screenshot: 'screenshot', text: 'note', path: 'path', link: 'link', voice: 'recording' }
 const size = (b: number) => (b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} KB` : b < 1e9 ? `${Math.round(b / 1e6)} MB` : `${(b / 1e9).toFixed(1)} GB`)
@@ -52,7 +53,7 @@ export function Welcome({ onSkip }: { onSkip: () => void }) {
         <button className="link-btn" onClick={onSkip}>Skip the setup</button>
       </div>
       <Group title="1. Save your first memory">
-        <Row label="Press the hotkey in any app" hint="The hotbar opens. Press Enter to save the window in front, with its text."><Kbd>Ctrl Shift Space</Kbd><Kbd>Enter</Kbd></Row>
+        <Row label="Press the hotkey in any app" hint="The hotbar opens. Press Enter to save the window in front, with its text."><Kbd>Option Space</Kbd><Kbd>Enter</Kbd></Row>
       </Group>
       <Group title="2. Allow access">
         <Row label="Screen Recording" hint="For screenshots. If one fails, allow umm in System Settings, Privacy & Security.">{asked}</Row>
@@ -161,7 +162,9 @@ export default function Settings({ profiles, onActive }: { profiles: Profiles; o
           {native && <Row label="Open at login" hint={mac.loginItem === 'approval' ? 'Allow umm in System Settings, General, Login Items.' : 'umm starts in the menu bar.'}>
             <Switch on={loginOn} set={on => send({ type: 'loginItem', on })} label="Open at login" />
           </Row>}
-          <Row label="Hotbar"><Kbd>Ctrl Shift Space</Kbd></Row>
+          <Row label="Hotbar" hint="Opens the hotbar in any app. Clipboard history stays on Ctrl Shift V.">
+            <Pick value={s.hotkey ?? 'option+space'} set={v => { patch({ hotkey: v }); send({ type: 'hotkey', key: v }) }} label="Hotbar hotkey" options={Object.entries(HOTKEYS).map(([value, label]) => ({ value, label }))} />
+          </Row>
         </Group>
 
         <Group title="Screenshots">

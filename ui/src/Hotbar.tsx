@@ -52,7 +52,7 @@ export default function Hotbar() {
     window.ummShow = show
     if (pending.show) { show(pending.show, pending.mode); pending.show = undefined }
     else if (!native) api.context().then(show, () => {})
-    api.settings().then(s => send({ type: 'appearance', mode: s.appearance }), () => {})  // this page loads with the app, so it sets the saved appearance
+    api.settings().then(s => { send({ type: 'appearance', mode: s.appearance }); send({ type: 'hotkey', key: s.hotkey }) }, () => {})  // this page loads with the app, so it sets the saved appearance and hotkey
     return () => { window.ummShow = undefined }
   }, [])
   useEffect(() => { (mode === 'note' ? area : input).current?.focus() }, [shown, mode])

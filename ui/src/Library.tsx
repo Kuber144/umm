@@ -11,7 +11,7 @@ import './main.css'
 const PAGE = 40
 export const KINDS: [Kind, string, string][] = [['screenshot', 'Screenshots', 'screenshot'], ['text', 'Notes', 'note'], ['link', 'Links', 'link'], ['path', 'Paths', 'path'], ['voice', 'Voice', 'voice note']]
 const EMPTY: Record<string, string> = {
-  user: 'Press Ctrl+Shift+Space, then Enter, to keep what is on your screen. Or drop a file or some text here.',
+  user: 'Press Option+Space, then Enter, to keep what is on your screen. Or drop a file or some text here.',
   agent: 'Ask Claude to remember something and it shows up here.',
 }
 const day = (v: string) => new Date(v + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
@@ -400,7 +400,7 @@ export default function Library() {
         {loaded && !list.length && !filtered ? <>
           <img src={icon} alt="" />
           <h2>Nothing in {scope === '*' ? 'any profile' : scope} yet</h2>
-          <p>{EMPTY[scope] ?? 'Drop a file or some text here, or press Ctrl+Shift+Space anywhere.'}</p>
+          <p>{EMPTY[scope] ?? 'Drop a file or some text here, or press Option+Space anywhere.'}</p>
           <div className="btns"><button className="btn" onClick={() => setComposing(true)}><Icon name="compose" />New note</button></div>
         </> : loaded && !list.length ? <>
           <span className="glyphbig"><Icon name="search" /></span>

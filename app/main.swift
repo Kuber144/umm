@@ -5,6 +5,14 @@ import Carbon
 final class Panel: NSPanel { override var canBecomeKey: Bool { true } }
 
 var onHotKey: ((UInt32) -> Void)?  // hotkey id: 1 is the hotbar, 2 the clipboard history
+var hotbarKey: EventHotKeyRef?
+
+// the hotbar hotkey from settings, the hotbar page sends it on load and Settings on a change
+func setHotkey(_ k: String) {
+    guard let mods = ["option+space": optionKey, "ctrl+shift+space": controlKey | shiftKey, "ctrl+option+space": controlKey | optionKey][k] else { return }
+    if let r = hotbarKey { UnregisterEventHotKey(r) }
+    RegisterEventHotKey(UInt32(kVK_Space), UInt32(mods), EventHotKeyID(signature: 0x756d6d20, id: 1), GetApplicationEventTarget(), 0, &hotbarKey)
+}
 
 // main window: dropped files go to the page as paths instead of WebKit opening them. Text drops stay with WebKit
 final class DropView: WKWebView {
@@ -111,7 +119,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
             return noErr
         }, 1, &spec, nil, nil)
         var ref: EventHotKeyRef?
-        RegisterEventHotKey(UInt32(kVK_Space), UInt32(controlKey | shiftKey), EventHotKeyID(signature: 0x756d6d20, id: 1), GetApplicationEventTarget(), 0, &ref)
+        setHotkey("option+space")  // the default, until the page sends the saved one
         RegisterEventHotKey(UInt32(kVK_ANSI_V), UInt32(controlKey | shiftKey), EventHotKeyID(signature: 0x756d6d20, id: 2), GetApplicationEventTarget(), 0, &ref)
 
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
@@ -323,6 +331,7 @@ final class App: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMess
                 NSAnimationContext.runAnimationGroup({ $0.duration = hotbar.isVisible && !still ? 0.22 : 0; $0.timingFunction = ease
                     hotbar.animator().setFrame(NSRect(x: hotbar.frame.minX, y: top - h, width: 680, height: h), display: true) }) { self.hotbar.invalidateShadow() }
             }
+        case "hotkey": setHotkey(d["key"] as? String ?? "")
         case "appearance": NSApp.appearance = ["light": NSAppearance(named: .aqua), "dark": NSAppearance(named: .darkAqua)][d["mode"] as? String ?? ""] ?? nil
         case "openExternal": if let s = d["url"] as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
         case "loginItem": loginItem(d["on"] as? Bool)

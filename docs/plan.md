@@ -2,7 +2,7 @@
 
 ## Entry points
 
-1. Hotbar. `Ctrl+Shift+Space` from any app saves a screenshot, the clipboard, a note or a voice recording. Done.
+1. Hotbar. `Option+Space` from any app saves a screenshot, the clipboard, a note or a voice recording. Done.
 2. Main window. Browse, search, filter, edit and manage profiles. Done.
 3. MCP. Agents search and save, and each agent can use its own profile. Done.
 4. CLI. An `umm` command, for example `umm add "..."`, `umm find tax`, `umm start`, `umm stop`. Done.

@@ -1,6 +1,6 @@
 # Architecture
 
-umm is one macOS app, `umm.app`. It owns the `Ctrl+Shift+Space` hotkey, shows the hotbar and the main window, and runs the Python backend as a child process. Quitting the app kills the backend. That is the kill switch. If the backend dies on its own, the app restarts it after 1s, 2s, 4s and so on up to 30s. Exit status 0 means the backend asked for it (after a data folder move), so it restarts after 0.5s. On start it kills any orphaned backend still holding the socket.
+umm is one macOS app, `umm.app`. It owns the hotbar hotkey, `Option+Space` by default, shows the hotbar and the main window, and runs the Python backend as a child process. Quitting the app kills the backend. That is the kill switch. If the backend dies on its own, the app restarts it after 1s, 2s, 4s and so on up to 30s. Exit status 0 means the backend asked for it (after a data folder move), so it restarts after 0.5s. On start it kills any orphaned backend still holding the socket.
 
 No TCP ports. The backend listens on a Unix socket at `~/Library/Application Support/umm/umm.sock`, so it can't clash with dev servers.
 
@@ -261,7 +261,7 @@ Apple Vision (VNRecognizeTextRequest, revision 3) on macOS 26 lists 30 OCR langu
 
 ## Hotbar
 
-Opens on `Ctrl+Shift+Space`. Keyboard first. `Enter` on open takes a screenshot (top row), so `Ctrl+Shift+Space` then `Enter` is the fast path, also with Ctrl and Shift still held. Rows:
+Opens on `Option+Space`. Keyboard first. `Enter` on open takes a screenshot (top row), so `Option+Space` then `Enter` is the fast path, also with Option still held. Rows:
 
 1. Screenshot
 2. Screenshot an area
@@ -303,7 +303,7 @@ Connections lists `GET /api/agents`: connected agents with a live dot, then rece
 
 ## Settings view
 
-The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, clipboard history of Off, 50, 200 or 500 entries, a Clear button that empties the history, the login item, the hotbar key), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once. Pickers use the shared `Menu`.
+The gear at the bottom of the sidebar, or `Cmd+,`, swaps the main window's list for the settings. Clicking a profile goes back. Groups: General (where hotkey saves go, clipboard history of Off, 50, 200 or 500 entries, a Clear button that empties the history, the login item, the hotbar hotkey: Option Space, Ctrl Shift Space or Ctrl Option Space), Screenshots (how long images are kept, the Accessibility permission for page URLs, excluded apps), Voice, Links, Storage (size, location), Agents (the MCP command with this install's path, the CLI install command). Every change saves at once. Pickers use the shared `Menu`.
 
 To move the data, Change... takes a folder, typed or picked with `chooseFolder`. The data goes to `<folder>/umm`, and the UI shows that path before it posts `/api/storage/move`. The backend then restarts in the new place, so the UI polls `GET /api/storage` every second until the path changes, and gives up after 60 seconds. A 400 or 409 shows its `detail` under the field. On an older backend the UI hides the image retention row, and the move says this version cannot do it.
 

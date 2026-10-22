@@ -6,7 +6,7 @@ Press a hotkey in any Mac app to save what you might need later, then search it 
 
 - Saves screenshots (with OCR text), the clipboard, typed notes, file paths, links and voice recordings. Each item records the app and window title you were in.
 - Keeps a clipboard history of text, images and copied files, with the app each copy came from, and pastes any of them back.
-- `Ctrl+Shift+Space` opens a small hotbar over any app. The fast path is the hotkey, then `Enter` for a screenshot.
+- `Option+Space` opens a small hotbar over any app. The fast path is the hotkey, then `Enter` for a screenshot.
 - A main window to search, filter, edit and organize everything into profiles.
 - Voice recordings are transcribed on your Mac with Whisper, in English, Hindi or the languages you pick.
 - An MCP server lets Claude Code, Codex, Cursor and other agents search and add memories. A CLI does the same from the terminal.
@@ -29,7 +29,7 @@ cd umm
 ./start.sh
 ```
 
-The first run installs the dependencies and builds `build/umm.app`, which takes a few minutes. umm lives in the menu bar and has no Dock icon until the main window opens. When macOS asks, allow Screen Recording and Microphone for umm. Then press `Ctrl+Shift+Space`.
+The first run installs the dependencies and builds `build/umm.app`, which takes a few minutes. umm lives in the menu bar and has no Dock icon until the main window opens. When macOS asks, allow Screen Recording and Microphone for umm. Then press `Option+Space`.
 
 `./stop.sh` quits umm and its backend. `./start.sh` also prints the commands to connect agents and install the CLI, with the right paths for your checkout.
 
@@ -51,7 +51,7 @@ It makes a self-signed certificate named "umm local signing" in your login keych
 
 ## Using it
 
-The hotbar opens with `Ctrl+Shift+Space`. `Ctrl+Shift+V` opens it on the clipboard history: type to filter, `Enter` pastes the entry into the app you were in (with the Accessibility permission, else it is copied and you press `Cmd+V`), `Cmd+Enter` keeps it as a memory. A copied file goes back as the file, so it pastes into Finder or a chat like a fresh copy.
+The hotbar opens with `Option+Space`. `Ctrl+Shift+V` opens it on the clipboard history: type to filter, `Enter` pastes the entry into the app you were in (with the Accessibility permission, else it is copied and you press `Cmd+V`), `Cmd+Enter` keeps it as a memory. A copied file goes back as the file, so it pastes into Finder or a chat like a fresh copy.
 
 - Typing filters the rows. To search memories, pick "Search memories", or type and press `Enter` on `Search memories for "..."`. With an empty box it lists recent memories. `Enter` copies one, `Cmd+Enter` opens the search in the main window.
 - In clipboard history and memory search, `Space` opens a preview pane on the right with the whole entry: the full text, the image, a screenshot with its note and text, a voice note with a player and transcript, or a link card. It stays open as you move until you press `Space` again.
